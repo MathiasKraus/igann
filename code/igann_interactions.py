@@ -380,6 +380,7 @@ class IGANN:
         '''
 
         counter_no_progress = 0
+        best_iter = 0
         # Sequentially fit one ELM after the other. Max number is stored in self.n_estimators.
         for counter in range(self.n_estimators):
             
@@ -476,7 +477,7 @@ class IGANN:
                     else:
                         self.plot_single()
             
-        if self.n_estimators > 0 and self.early_stopping > 0:
+        if self.early_stopping > 0:
             # We remove the ELMs that did not improve the performance. Most likely best_iter equals self.early_stopping.
             print(f'Cutting at {best_iter}') 
             self.regressors = self.regressors[:best_iter + n_prev_regressors]
