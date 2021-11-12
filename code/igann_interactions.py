@@ -283,7 +283,7 @@ class IGANN:
         # Fit the linear model on all data
         self.init_classifier.fit(X, y)
 
-        print(self.init_classifier.coef_)
+        #print(self.init_classifier.coef_)
 
         # Split the data into train and validation data and compute the prediction of the
         # linear model. For regression this is straightforward, for classification, we 
@@ -479,7 +479,8 @@ class IGANN:
             
         if self.early_stopping > 0:
             # We remove the ELMs that did not improve the performance. Most likely best_iter equals self.early_stopping.
-            print(f'Cutting at {best_iter}') 
+            if self.verbose > 0:
+                print(f'Cutting at {best_iter}') 
             self.regressors = self.regressors[:best_iter + n_prev_regressors]
             self.boosting_rates = self.boosting_rates[:best_iter + n_prev_regressors]
             
@@ -533,8 +534,8 @@ class IGANN:
                 alpha = np.random.uniform(low=np.max(lower_list), high=np.min(upper_list))
       
         if not found:
-            print('Did not find num of interactions wanted!!!! EXIT')
-            return
+            print('Did not find wanted number of interactions!!!!')
+            print(f'Using interactions {feat_pairs}')
         
         else:
             if self.verbose > 0:
