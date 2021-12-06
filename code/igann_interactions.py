@@ -18,18 +18,20 @@ class ELM_Regressor():
     our case).
     See wikipedia and google for more details .
     '''
-    def __init__(self, n_input, n_hid, seed=0, scale=10, elm_alpha=0.0001, act='elu'):
+    def __init__(self, n_input, n_hid, feat_pairs, seed=0, scale=10, scale_inter=1, elm_alpha=0.0001, act='elu'):
         '''
         Input parameters:
         - n_input: number of inputs/features for your task (shape[1] of your X matrix)
         - n_hid: number of hidden neurons for each feature. Multiply this number with n_input
         to get the number of parameters this model has (-1 because of the bias term)
+        - feat_pairs: TODO
         - seed: This number sets the seed for generating the random weights. It should
         be different for each regressor
         - scale: the scale which is used to initialize the weights in the first layer of the 
         model. These weights are not changed throughout the optimization. This parameter
         has huge impact on the model. A larger scale makes the shape functions sharper, a lower
         scale makes them smoother. Definitely play around with this one.
+        - scale_inter: scale of the interaction ELMs
         - elm_alpha: the regularization of the ridge regression. I didn't find this to have
         a huge impact, but let's try it out...
         - act: the activation function in the model. I mainly used 'elu' which works well,
@@ -39,9 +41,14 @@ class ELM_Regressor():
         np.random.seed(seed)
         # The following are the random weights in the model which are not optimized. 
         self.hidden_list = [np.random.normal(scale=scale, size=(1, n_hid)) for _ in range(n_input)]
+        self.hidden_list_inter = [(np.random.normal(scale=scale_inter, size=(1, n_hid)),
+                                  np.random.normal(scale=scale_inter, size=(1, n_hid))) for _ in range(len(feat_pairs))]
         self.output_model = None
+        self.n_input = n_input
         self.n_hid = n_hid
+        self.feat_pairs = feat_pairs
         self.scale = scale
+        self.scale_inter = scale_inter
         self.elm_alpha = elm_alpha
         self.rand_act = act
 
@@ -61,12 +68,23 @@ class ELM_Regressor():
         from hidden_list. After applying the activation function, we return the result
         in X_hid
         '''
-        X_hid = np.zeros((X.shape[0], X.shape[1] * self.n_hid))
+        X_hid = np.zeros((X.shape[0], (X.shape[1] + len(self.feat_pairs)) * self.n_hid))
         for i in range(X.shape[1]):
             x_in = np.expand_dims(X[:, i], 1)
             x_in = np.dot(x_in, self.hidden_list[i])
             x_in = self.act(x_in)
             X_hid[:, i * self.n_hid:(i + 1) * self.n_hid] = x_in
+        
+        starting_index = X.shape[1] * self.n_hid
+            
+        for c, (i, j) in enumerate(self.feat_pairs):
+            x_in = np.expand_dims(X[:, i], 1)
+            x_in = np.dot(x_in, self.hidden_list_inter[c][0])
+            x_jn = np.expand_dims(X[:, j], 1)
+            x_jn = np.dot(x_jn, self.hidden_list_inter[c][1])
+            
+            X_hid[:, starting_index + c * self.n_hid : starting_index + (c + 1) * self.n_hid] = self.act(x_in + x_jn)
+        
         return X_hid
 
     def predict(self, X):
@@ -96,83 +114,40 @@ class ELM_Regressor():
         x_in = self.act(x_in)
         out = np.dot(x_in, np.expand_dims(self.output_model.coef_[i * self.n_hid: (i + 1) * self.n_hid], 1))
         return out
-
-    def fit(self, X, y):
+    
+    def predict_single_inter(self, x1, x2, i):
         '''
-        This function fits the ELM on the training data (X, y). 
+        This function computes the output of one shape function. Note, that the 
+        bias term is not used for this prediction.
+        Input parameters:
+        x: a vector representing the values which are used for feature i
+        i: the index of the feature that should be used for the prediction
         '''
-        X_hid = self.get_hidden_values(X)
 
-        # Fit the ridge regression on the hidden values.
-        m = Ridge(alpha=self.elm_alpha)
-        with sklearn.config_context(assume_finite=True):
-            m.fit(X_hid, y)
-        self.output_model = m
-
-
-class ELM_Regressor_Feat_Pair():
-    def __init__(self, input_pairs, n_hid, seed=0, scale=10, elm_alpha=0.0001, act='elu'):
-        super().__init__()
-        np.random.seed(seed)
-        self.hidden_list = [(np.random.normal(scale=scale, size=(1, n_hid)),
-                              np.random.normal(scale=scale, size=(1, n_hid))) for _ in range(len(input_pairs))] 
-
-        self.input_pairs = input_pairs
-        self.output_model = None
-        self.n_hid = n_hid
-        self.scale = scale
-        self.elm_alpha = elm_alpha
-        self.rand_act = act
-
-    def act(self, x):
-        if self.rand_act == 'elu':
-            x[x <= 0] = np.exp(x[x <= 0]) - 1
-        elif self.rand_act == 'relu':
-            x[x <= 0] = 0
-        elif self.rand_act == 'gelu':
-            x = 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x ** 3)))
-        return x
-
-    def get_hidden_values(self, X):
-        X_hid = np.zeros(shape=(X.shape[0], len(self.input_pairs) * self.n_hid))
-        
-        for c, (i, j) in enumerate(self.input_pairs):
-            x_in = np.expand_dims(X[:, i], 1)
-            x_in = np.dot(x_in, self.hidden_list[c][0])
-            x_jn = np.expand_dims(X[:, j], 1)
-            x_jn = np.dot(x_jn, self.hidden_list[c][1])
-            
-            X_hid[:, c * self.n_hid : (c + 1) * self.n_hid] = self.act(x_in + x_jn)
-
-        return X_hid
-
-    def predict(self, X):
-        X_hid = self.get_hidden_values(X)
-
-        out = self.output_model.predict(X_hid)
-        return out
-
-    def predict_single(self, x1, x2, i):
         x1 = x1.reshape(len(x1), 1)
         x2 = x2.reshape(len(x2), 1)
         
-        x1 = np.dot(x1, self.hidden_list[i][0])
-        x2 = np.dot(x2, self.hidden_list[i][1])
-        
+        x1 = np.dot(x1, self.hidden_list_inter[i][0])
+        x2 = np.dot(x2, self.hidden_list_inter[i][1])
         x = self.act(x1 + x2)
         
-        out = np.dot(x, np.expand_dims(self.output_model.coef_[i * self.n_hid: (i + 1) * self.n_hid], 1))
+        starting_index = self.n_input * self.n_hid
+        out = np.dot(x, np.expand_dims(self.output_model.coef_[starting_index + i * self.n_hid: 
+                                                               starting_index + (i + 1) * self.n_hid], 1))
         return out
 
-    def fit(self, X, y):
-        X_hid = self.get_hidden_values(X)
+    def fit(self, X, y, mult_coef):
+        '''
+        This function fits the ELM on the training data (X, y). 
+        '''
+        X_hid = self.get_hidden_values(X)*mult_coef
 
         # Fit the ridge regression on the hidden values.
-        m = Ridge(alpha=self.elm_alpha)
+        m = Ridge(alpha=self.elm_alpha, fit_intercept=False)
+        # TODO: Intercept?
         with sklearn.config_context(assume_finite=True):
             m.fit(X_hid, y)
         self.output_model = m
-
 
 class IGANN:
     '''
@@ -183,8 +158,8 @@ class IGANN:
     The model first fits a linear model and then subsequently, train ELMs on the gradients of the
     previous prediction (the boosting idea).
     '''
-    def __init__(self, task='classification', n_hid=10, n_estimators=500, boost_rate='auto', init_reg=0.5, 
-    		     elm_scale=10, elm_alpha=0.0001, interactions=0, n_hid_interactions=10, only_interactions=False,
+    def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1.0, 
+    		     elm_scale=1, elm_scale_inter=0.5, elm_alpha=1, feat_select=None, interactions=0, 
                  act='elu', early_stopping=50, random_state=1,
                  verbose=1):
         '''
@@ -192,14 +167,15 @@ class IGANN:
         task: defines the task, can be 'regression' or 'classification'
         n_hid: the number of hidden neurons for one feature
         n_estimators: the maximum number of estimators (ELMs) to be fitted.
-        boost_rate: the boosting rate with which the predictions are updated with a new ELM model.
+        boost_rate_opt: Flag that indicates if the boosting rates are fine-tuned or not.
+        boost_rate_opt_iter: Number of iterations after which the fine-tuning step of the boosting rates is performed
         It can be a real number 0.5/1.0,... or 'auto'. With 'auto' the boosting_rate is optimized.
         init_reg: the initial regularization strength for the linear model.
         elm_scale: the scale of the random weights in the elm model.
+        elm_scale_inter: the scale of the random weights for the interaction terms.
         elm_alpha: the regularization strength for the ridge regression in the ELM model.
+        feat_select: Integer that says how many features should be selected
         interactions: the number of interactions that should be fit.
-        n_hid_interactions: the number of hidden neurons for one pair of features (one interaction)
-        only_interactions: optimize only interactions and no single-feature ELMs (default is False)
         act: the activation function in the ELM model.
         early_stopping: we use early stopping which means that we don't continue training more ELM 
         models, if there as been no improvements for 'early_stopping' number of iterations.
@@ -210,18 +186,18 @@ class IGANN:
         '''
         self.task = task
         self.n_hid = n_hid
-        self.boost_rate = boost_rate
         self.elm_scale = elm_scale
+        self.elm_scale_inter = elm_scale_inter
         self.elm_alpha = elm_alpha
         self.init_reg = init_reg
         self.act = act
         self.n_estimators = n_estimators
         self.early_stopping = early_stopping
+        self.feat_select = feat_select
         self.interactions = interactions
-        self.only_interactions = only_interactions
         self.random_state = random_state
         self.verbose = verbose
-        self.n_hid_interactions = n_hid_interactions
+        self.top_k_features = []
         self.regressors = []
         self.boosting_rates = []
         self.train_scores = []
@@ -229,6 +205,8 @@ class IGANN:
         self.train_losses = []
         self.val_losses = []
         self.test_losses = []
+        self.regressor_predictions = []
+        self.boost_rate = boost_rate
 
         if task == 'classification':
             self.init_classifier = LogisticRegression(penalty='l1', solver='liblinear', C=self.init_reg,
@@ -237,26 +215,35 @@ class IGANN:
             self.init_classifier = Lasso(alpha=1/self.init_reg)
         else:
             print('Task not implemented. Can be classification or regression')
-
-    def _loss_gradient(self, y, p):
+    
+    def _loss_sqrt_hessian(self, y, p):
         '''
-        This function computes the gradients of the log loss or the mean squared error.
+        This function computes the square root of the hessians of the log loss or the mean squared error.
         '''
         if self.task == 'classification':
-            return - y / (1 + np.exp(y * p))
+            return 0.5 / np.cosh(0.5*y*p)
         else:
-            return p - y
-        
+            return np.array([np.sqrt(2.0)])
+
+    def _get_y_tilde(self,y,p):
+        if self.task == 'classification':
+            return y/np.exp(0.5*y*p)
+        else:
+            return np.sqrt(2.0)*(y - p)
+    
     def _act(self, x):
         x[x <= 0] = np.exp(x[x <= 0]) - 1
         return x
 
-    def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None):
+    def fit(self, X, y, feat_pairs=None, fixed_feat=[],
+            val_set=None, eval=None, plot_fixed_features=None):
         '''
         This function fits the model on training data (X, y). 
         Parameters:
         X: the feature matrix
         y: the targets
+        feat_pairs: Given feature pairs
+        fixed_feat: List of feature names which should definitely end up in the model
         val_set: can be tuple (X_val, y_val) for a defined validation set. If not set,
         it will be split from the training set randomly. (This can be helpful for tasks like 
         time series analysis)
@@ -276,14 +263,28 @@ class IGANN:
         y = y.squeeze()
 
         if self.task == 'classification':
-            if np.min(y) == 0:
-                print('Labels must be -1 and 1')
-                return
+            if np.min(y) != -1:
+                y = 2 * y - 1
+
+        if feat_pairs != None:
+            self.interactions = len(feat_pairs)
+
+        if self.feat_select != None and feat_pairs != None:
+            for fp in feat_pairs:
+                if fp[0] not in fixed_feat:
+                    fixed_feat.append(fp[0])
+                if fp[1] not in fixed_feat:
+                    fixed_feat.append(fp[1])
+                    
+            features = self._select_features(X, y)
+            features.extend([e for e,f in enumerate(self.feature_names) if f in fixed_feat])
+            self.feature_names = np.array([f for e, f in enumerate(self.feature_names) if e in features])
+            X = X[:, features]
 
         # Fit the linear model on all data
         self.init_classifier.fit(X, y)
 
-        print(self.init_classifier.coef_)
+        #print(self.init_classifier.coef_)
 
         # Split the data into train and validation data and compute the prediction of the
         # linear model. For regression this is straightforward, for classification, we 
@@ -334,33 +335,34 @@ class IGANN:
         if self.verbose >= 1:
             print('Train: {:.4f} Val: {:.4f} {}'.format(train_loss_init, val_loss_init, 'init'))
 
-        if self.only_interactions:
-            best_val_loss = np.inf
+        if self.interactions==0:
+            self.feat_pairs = []
         else:
-            best_val_loss = self._run_optimization(X, y, y_hat, X_val, y_val, y_hat_val, eval,
-                                                  val_loss_init, plot_fixed_features,
-                                                  interactions=False, feat_pairs=None, n_prev_regressors=0)
+            hessian_train_sqrt=self._loss_sqrt_hessian(y, y_hat)
+            y_tilde=self._get_y_tilde(y,y_hat)
             
-        self.single_regressors = len(self.regressors)
-        if self.interactions == 0:
-            return 
-        
-        y_hat = self.predict(X)
-        y_hat_val = self.predict(X_val)
-        
-        gradients = -self._loss_gradient(y, y_hat)
-        self.feat_pairs = self._find_interactions(X, gradients)
-        
+            if feat_pairs != None:
+                self.feat_pairs = []
+                if type(feat_pairs[0][0]) == str:
+                    for fp in feat_pairs:
+                        fp_comb = (int(np.where(self.feature_names == fp[0])[0]), 
+                                   int(np.where(self.feature_names == fp[1])[0]))
+                        self.feat_pairs.append(fp_comb)
+                else:
+                    self.feat_pairs = feat_pairs
+            else:
+                self.feat_pairs = self._find_interactions(X, y_tilde, 1/np.sqrt(0.5)*hessian_train_sqrt[:,np.newaxis])
+            
+            print(self.feat_pairs)
         self._run_optimization(X, y, y_hat, X_val, y_val, y_hat_val, eval,
-                              best_val_loss, plot_fixed_features, 
-                              interactions=True, feat_pairs=self.feat_pairs, 
-                              n_prev_regressors=self.single_regressors)
+                               val_loss_init, plot_fixed_features,
+                               feat_pairs=self.feat_pairs)
 
         return 
 
     def _run_optimization(self, X, y, y_hat, X_val, y_val, y_hat_val, eval, 
                          best_loss, plot_fixed_features, 
-                         interactions=False, feat_pairs=None, n_prev_regressors=0):
+                         feat_pairs=[]):
         '''
         This function runs the optimization for ELMs with single features or ELMs with 
         pairs of features (interactions). This function should not be called from outside.
@@ -374,59 +376,39 @@ class IGANN:
         eval: can be tuple (X_test, y_test) to have a peek on the test performance
         best_loss: best previous loss achieved. This is to keep track of the overall best sequence of ELMs.
         plot_fixed_features: Usually, the most important features are plotted for verbose=2.
-        interactions: True if the ELMs should fit interactions, else False
         feat_pairs: list of feature pairs when fitting interactions
-        n_prev_regressors: number of previous regressors before starting the optimization
         '''
 
         counter_no_progress = 0
+        best_iter = 0
         # Sequentially fit one ELM after the other. Max number is stored in self.n_estimators.
         for counter in range(self.n_estimators):
             
-            # Compute the gradients of the loss
-            gradients = -self._loss_gradient(y, y_hat)
-
-            # Fit an ELM on the gradients
-            if interactions:
-                regressor = ELM_Regressor_Feat_Pair(feat_pairs, n_hid=self.n_hid, seed=counter, scale=self.elm_scale, elm_alpha=self.elm_alpha,
-                                           act=self.act)
-            else:
-                regressor = ELM_Regressor(n_input=X.shape[1], n_hid=self.n_hid, seed=counter, scale=self.elm_scale, elm_alpha=self.elm_alpha,
-                                           act=self.act)
             
-            regressor.fit(X, gradients)
+            hessian_train_sqrt=self._loss_sqrt_hessian(y, y_hat)
+            y_tilde=np.sqrt(0.5)*self._get_y_tilde(y,y_hat)
+
+            # Fit an ELM on y_tilde_tilde
+            regressor = ELM_Regressor(n_input=X.shape[1], n_hid=self.n_hid, 
+                                      feat_pairs=feat_pairs, seed=counter, scale=self.elm_scale, scale_inter=self.elm_scale_inter, elm_alpha=self.elm_alpha,
+                                      act=self.act)
+            
+            # Fit  ELM regressor
+            regressor.fit(X, y_tilde, np.sqrt(0.5)*self.boost_rate*hessian_train_sqrt[:,np.newaxis])
 
             # Make a prediction of the ELM for the gradients of train and val
-            train_gradients_pred = regressor.predict(X).squeeze()
-            val_gradients_pred = regressor.predict(X_val).squeeze()
+            train_regressor_pred = regressor.predict(X).squeeze()
+            val_regressor_pred = regressor.predict(X_val).squeeze()
 
-            # Optimize the boosting rate or take the passed boosting rate
-            if self.task == 'classification':
-                fun = lambda boost_rate: log_loss(y_val, 1 / (1 + np.exp(-(y_hat_val + boost_rate * val_gradients_pred))))
-            else:
-                fun = lambda boost_rate: mean_squared_error(y_val, y_hat_val + boost_rate * val_gradients_pred)
-
-            if self.boost_rate == 'auto':
-                opt_boost_rate = optim.minimize_scalar(fun, bounds=(0.05, 1.0), method='bounded')
-                boost_rate = opt_boost_rate.x
-            else:
-                boost_rate = self.boost_rate
+            self.regressor_predictions.append(train_regressor_pred)
 
             # Update the prediction for training and validation data
-            y_hat += boost_rate * train_gradients_pred
-            y_hat_val += boost_rate * val_gradients_pred
-
-            # Make predictions are computing performance metrics 
-            if counter == 0:
-                val_pred = self.predict(X_val)
-                train_pred = self.predict(X)
-            else:
-                val_pred = self._update_predict(X_val, val_pred, boost_rate)
-                train_pred = self._update_predict(X, train_pred, boost_rate)
+            y_hat += self.boost_rate * train_regressor_pred
+            y_hat_val += self.boost_rate * val_regressor_pred
             
             if self.task == 'classification':
-                val_pred_prob = 1 / (1 + np.exp(-val_pred))
-                train_pred_prob = 1 / (1 + np.exp(-train_pred))
+                val_pred_prob = 1 / (1 + np.exp(-y_hat_val))
+                train_pred_prob = 1 / (1 + np.exp(-y_hat))
 
                 val_auc = roc_auc_score(y_val, val_pred_prob)
                 val_loss = log_loss(y_val, val_pred_prob)
@@ -434,15 +416,15 @@ class IGANN:
                 train_auc = roc_auc_score(y, train_pred_prob)
                 train_loss = log_loss(y, train_pred_prob)
             else:
-                val_mse = mean_squared_error(y_val, val_pred)
+                val_mse = mean_squared_error(y_val, y_hat_val)
                 val_loss = val_mse
-                train_mse = mean_squared_error(y, train_pred)
+                train_mse = mean_squared_error(y, y_hat)
                 train_loss = train_mse
 
             # Keep the ELM, the boosting rate and losses in lists, so 
             # we can later use them again.
             self.regressors.append(regressor)
-            self.boosting_rates.append(boost_rate)
+            self.boosting_rates.append(self.boost_rate)
             self.train_losses.append(train_loss)
             self.val_losses.append(val_loss)
 
@@ -457,10 +439,10 @@ class IGANN:
 
             if self.verbose >= 1:
                 if self.task == 'classification':
-                    self._print_results(counter, counter_no_progress, eval, boost_rate, train_auc,
+                    self._print_results(counter, counter_no_progress, eval, self.boost_rate, train_auc,
                                        train_loss, val_auc, val_loss)
                 else:
-                    self._print_results(counter, counter_no_progress, eval, boost_rate, train_mse,
+                    self._print_results(counter, counter_no_progress, eval, self.boost_rate, train_mse,
                                        train_loss, val_mse, val_loss)
                 
             # Stop training if the counter for early stopping is greater than the parameter we passed.
@@ -468,23 +450,66 @@ class IGANN:
                 break
 
             if self.verbose >= 2:
-                if interactions:
-                    self.plot_interactions()
-                else:
+                if counter%5==0:
                     if plot_fixed_features != None:
-                        self.plot_by_list(plot_fixed_features)
+                        self.plot_single(plot_by_list=plot_fixed_features)    
                     else:
                         self.plot_single()
+                        if len(self.feat_pairs) > 0:
+                            if counter==0:
+                                self.plot_interactions(True)
+                            else:
+                                self.plot_interactions(False)
             
-        if self.n_estimators > 0 and self.early_stopping > 0:
+        if self.early_stopping > 0:
             # We remove the ELMs that did not improve the performance. Most likely best_iter equals self.early_stopping.
-            print(f'Cutting at {best_iter}') 
-            self.regressors = self.regressors[:best_iter + n_prev_regressors]
-            self.boosting_rates = self.boosting_rates[:best_iter + n_prev_regressors]
+            if self.verbose > 0:
+                print(f'Cutting at {best_iter}') 
+            self.regressors = self.regressors[:best_iter]
+            self.boosting_rates = self.boosting_rates[:best_iter]
             
         return best_loss
 
-    def _find_interactions(self, X, y):
+    def _select_features(self, X, y):
+        regressor = ELM_Regressor(X.shape[1], self.n_hid, [],
+                                  scale=self.elm_scale, scale_inter=self.elm_scale_inter, act=self.act)
+        X_tilde = regressor.get_hidden_values(X)
+
+        lower_bound = 1e-10
+        upper_bound = 1000
+        alpha = (lower_bound+upper_bound)/2
+        found = False
+        for _ in range(1000):
+            lasso = Lasso(alpha=alpha, random_state=self.random_state)
+            lasso.fit(X_tilde, y)
+            features = []
+            for pos in np.where(lasso.coef_ != 0)[0]:
+                block = int((pos - (pos % self.n_hid)) / self.n_hid)
+                if block not in features:
+                    features.append(block)
+                
+            if len(features) == self.feat_select:
+                found = True
+                break
+            elif len(features) < self.feat_select:
+                upper_bound=alpha
+                alpha = (lower_bound+upper_bound)/2
+            else:
+                lower_bound=alpha
+                alpha = (lower_bound+upper_bound)/2
+      
+        if not found:
+            print('Did not find wanted number of features!!!!')
+            print(f'Using {features}')
+        
+        else:
+            if self.verbose > 0:
+                print(f'Found features {features}')
+            
+        return features
+        
+
+    def _find_interactions(self, X, y, mult_coef):
         '''
         This function finds the most promising pair of features for predicting y. It does so
         by generating a large hidden layer consisting of hidden activations of ELMs, where each ELM
@@ -497,60 +522,54 @@ class IGANN:
             sample = np.random.choice(np.arange(len(X)), size=10000, replace=False)
             X = X[sample]
             y = y[sample]
-        X_hid = np.zeros(shape=(X.shape[0], X.shape[1] * X.shape[1] * self.n_hid_interactions))
-        hidden_list = [[(np.random.normal(scale=1, size=(1, self.n_hid_interactions)),
-                 np.random.normal(scale=1, size=(1, self.n_hid_interactions))) for _ in range(X.shape[1])] for _ in range(X.shape[1])]
-
-        for i in range(X.shape[1]):
-            for j in range(X.shape[1]):
-                if i == j:
-                    continue
-                # This is super stupid
-                x_in = np.expand_dims(X[:, i], 1)
-                x_in = np.dot(x_in, hidden_list[i][j][0])
-                x_jn = np.expand_dims(X[:, j], 1)
-                x_jn = np.dot(x_jn, hidden_list[i][j][1])
+            mult_coef = mult_coef[sample]
         
-                X_hid[:, (i * X.shape[1] + j) * self.n_hid_interactions:(i * X.shape[1] + j + 1) * self.n_hid_interactions] = self._act(x_in + x_jn)
+        regressor = ELM_Regressor(X.shape[1], self.n_hid, [(i,j) for i in range(X.shape[1]) for j in range(X.shape[1])],
+                                  scale=self.elm_scale, scale_inter=self.elm_scale_inter, act=self.act)
+        X_tilde = regressor.get_hidden_values(X)
+        X_tilde_tilde = X_tilde*mult_coef
 
-        lower_list = [1e-10]
-        upper_list = [1000]
-        alpha = 1
+        lower_bound = 1e-10
+        upper_bound = 1000
+        alpha = (lower_bound+upper_bound)/2
         found = False
         for _ in range(1000):
-            lasso = Lasso(alpha=alpha)
-            lasso.fit(X_hid, y)
-            feat_pairs = self._get_feat_pairs(lasso.coef_, X)
+            lasso = Lasso(alpha=alpha, random_state=self.random_state)
+            lasso.fit(X_tilde_tilde, y)
+            feat_pairs = self._get_nonzero_feat_pairs(lasso.coef_[self.n_hid*X.shape[1]:], X)
             if len(feat_pairs) == self.interactions:
                 found = True
                 break
             elif len(feat_pairs) < self.interactions:
-                upper_list.append(alpha)
-                alpha = np.random.uniform(low=np.max(lower_list), high=np.min(upper_list))
+                upper_bound=alpha
+                alpha = (lower_bound+upper_bound)/2
             else:
-                lower_list.append(alpha)
-                alpha = np.random.uniform(low=np.max(lower_list), high=np.min(upper_list))
+                lower_bound=alpha
+                alpha = (lower_bound+upper_bound)/2
       
         if not found:
-            print('Did not find num of interactions wanted!!!! EXIT')
-            return
+            print('Did not find wanted number of interactions!!!!')
+            print(f'Using interactions {feat_pairs}')
         
         else:
             if self.verbose > 0:
                 print(f'Found interactions {feat_pairs}')
             
         return feat_pairs
+        
 
-    def _get_feat_pairs(self, coef, X):
+    def _get_nonzero_feat_pairs(self, coef, X):
         '''
         This function computes how many ELM blocks are corresponding to coefficients != 0.
         It then returns all feature pairs that correspond to these ELM blocks.
         '''
         feat_pairs = []
         for pos in np.where(coef != 0)[0]:
-            block = int((pos - (pos % self.n_hid_interactions)) / self.n_hid_interactions)
+            block = int((pos - (pos % self.n_hid)) / self.n_hid)
             corr_i_feat = int(block / X.shape[1])
             corr_j_feat = block % X.shape[1]
+            if corr_i_feat == corr_j_feat:
+                continue
             if corr_i_feat < corr_j_feat:
                 if (corr_i_feat, corr_j_feat) not in feat_pairs:
                     feat_pairs.append((corr_i_feat, corr_j_feat))
@@ -611,15 +630,13 @@ class IGANN:
 
         return ret
 
-    def _update_predict(self, X, pred, boost_rate):
+    def _update_predict(self, X, pred, boost_rate, regressor):
         '''
         This is a helper function that speeds up training when we pass an evaluation set.
         '''
         if type(X) == pd.DataFrame:
             X = np.array(X)
-        pred_nn = np.zeros(len(X), dtype=np.float32)
-        regressor = self.regressors[-1]
-        pred_nn += boost_rate * regressor.predict(X).squeeze()
+        pred_nn = boost_rate * regressor.predict(X).squeeze()
         pred += pred_nn
 
         return pred
@@ -678,95 +695,208 @@ class IGANN:
             
         return feature_effects
 
-    def plot_single(self, show_n=5):
+    def plot_single(self, plot_by_list=None, show_n=5):
         '''
         This function plots the most important shape functions. 
         Parameters:
         show_n: the number of shape functions that should be plotted (don't know if this works).
         '''
         feature_effects = self.get_shape_functions_as_dict()
-        top_k = [d for d in sorted(feature_effects, reverse=True, key=lambda x: x['avg_effect'])][:show_n]
+        if plot_by_list is None:
+            top_k = [d for d in sorted(feature_effects, reverse=True, key=lambda x: x['avg_effect'])][:show_n]
+        else:
+            top_k = [d for d in sorted(feature_effects, reverse=True, key=lambda x: x['avg_effect'])]
+            show_n = len(plot_by_list)
 
-        y_min = np.inf
-        y_max = -np.inf
-        fig, axs = plt.subplots(2, show_n, figsize=(14, 4),
-                                gridspec_kw={'height_ratios': [5, 1]})
-        for i, d in enumerate(top_k):
+        if [d['name'] for d in top_k] != self.top_k_features:
+            create_figure = True
+            self.top_k_features = plot_by_list
+        else:
+            create_figure=False
+
+
+        if create_figure:
+            plt.close(fig="Shape functions")
+            self.fig, self.axs = plt.subplots(2, show_n, figsize=(14, 4),
+                                    gridspec_kw={'height_ratios': [5, 1]},
+                                    num="Shape functions")
+            plt.subplots_adjust(wspace=0.4)
+            self.plot_objects=[]
+        else:
+            plot_object_counter = 0
+            
+        i = 0
+        for d in top_k:
+            if plot_by_list is not None and d['name'] not in plot_by_list:
+                continue
             if len(d['x']) < 4:
-                axs[0][i].scatter(d['x'], d['y'], c='gray')
-                axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
-                axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']), 
-                                                          d['avg_effect']))
+                if create_figure:
+                    if show_n == 1:
+                        plot_object = self.axs[0].scatter(d['x'], d['y'], c='gray')
+                        self.axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
+                        self.axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']), 
+                                                                    d['avg_effect']))
+                    else:
+                        plot_object = self.axs[0][i].scatter(d['x'], d['y'], c='gray')
+                        self.axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
+                        self.axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']), 
+                                                                       d['avg_effect']))
+                    if type(plot_object)==list:
+                        plot_object=plot_object[0]
+                    
+                    self.plot_objects.append(plot_object)
+                else:
+                    plot_object = self.plot_objects[plot_object_counter]
+                    plot_object_counter += 1
+                    plot_object.set_data(d['x'],d['y'])
+                    self.axs[0][i].set_ylim(bottom=min(d['y']), top=max(d['y']))
+                    self.fig.canvas.draw_idle()
+                    self.fig.canvas.flush_events()
             else:
-                axs[0][i].plot(d['x'], d['y'], c='gray')
-                axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
-                axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                          d['avg_effect']))
-            if np.max(d['y']) > y_max:
-                y_max = np.max(d['y'])
-            if np.min(d['y']) < y_min:
-                y_min = np.min(d['y'])
+                if create_figure:
+                    if show_n == 1:
+                        plot_object = self.axs[0].plot(d['x'], d['y'], c='gray')
+                        self.axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
+                        self.axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                                                              d['avg_effect']))
+                    else:
+                        plot_object = self.axs[0][i].plot(d['x'], d['y'], c='gray')
+                        self.axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
+                        self.axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                                                                       d['avg_effect']))
+                    if type(plot_object)==list:
+                        plot_object=plot_object[0]
+                        
+                    self.plot_objects.append(plot_object)
+                else:
+                    plot_object = self.plot_objects[plot_object_counter]
+                    plot_object_counter += 1
+                    plot_object.set_data(d['x'],d['y'])
+                    self.axs[0][i].set_ylim(bottom=min(d['y']), top=max(d['y']))
+                    self.fig.canvas.draw_idle()
+                    self.fig.canvas.flush_events()
+            i += 1
+            
+        if create_figure:   
+            if show_n == 1:
+                self.axs[1].get_xaxis().set_visible(False)
+                self.axs[1].get_yaxis().set_visible(False)
+            else:
+                for i in range(show_n):
+                    self.axs[1][i].get_xaxis().set_visible(False)
+                    self.axs[1][i].get_yaxis().set_visible(False)
+            plt.show()
 
-        for i in range(show_n):
-            # fig.axes[i].set_ylim([y_min + 0.05 * y_min, y_max + 0.05 * y_max])
-            axs[1][i].get_xaxis().set_visible(False)
-            axs[1][i].get_yaxis().set_visible(False)
-            # axs[1][i].set
-        plt.show()
-
-    def plot_interactions(self):
+    def plot_interactions(self, create_figure=True):
+        if create_figure:
+            plt.close(fig="Interactions")
+            self.fig_inter, self.axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(14, 4), num="Interactions")
+            plt.subplots_adjust(wspace=0.4)
+            self.plot_objects_inter=[]
+        else:
+            plot_object_counter = 0
+        
         for i, fp in enumerate(self.feat_pairs):
             x1 = np.linspace(self.unique[fp[0]].min(), self.unique[fp[0]].max(), 50)
             x2 = np.linspace(self.unique[fp[1]].min(), self.unique[fp[1]].max(), 50)
             pred = np.zeros((len(x1), len(x2)))
             for v in range(pred.shape[0]):
                 x1_stat = x1[v] * np.ones(len(x2))
-                for regressor, boost_rate in zip(self.regressors[self.single_regressors:], 
-                                                 self.boosting_rates[self.single_regressors:]):
-                    pred[v,:] += boost_rate * regressor.predict_single(x1_stat, x2, i).squeeze()
-        
-            fig, ax = plt.subplots()
-            ax.pcolormesh(x1, x2, pred, shading='auto')
-            #ax.set_title(f'{fp[0]} - {fp[1]}')
-            plt.show()
-
-    def plot_by_list(self, feat_names, plot=True):
-        '''
-        This function plots the shape functions of feat_names.
-        '''
-        feature_effects = self.get_shape_functions_as_dict()
-        top_k = [d for d in sorted(feature_effects, reverse=True, key=lambda x: x['avg_effect'])]
-
-        y_min = np.inf
-        y_max = -np.inf
-        fig, axs = plt.subplots(2, max(2, len(feat_names)), figsize=(14, 4), 
-                                gridspec_kw={'height_ratios': [5, 1]})
-        i = 0
-        for d in top_k:
-            if d['name'] not in feat_names:
-                continue
-            if len(d['x']) < 4:
-                axs[0][i].scatter(d['x'], d['y'], c='gray')
-                axs[1][i].bar(d['hist'][1][:-1], d['hist'][0],width=1, color='gray')
-                axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']), 
-                                                         d['avg_effect']))
+                for regressor, boost_rate in zip(self.regressors, 
+                                                 self.boosting_rates):
+                    pred[v,:] += boost_rate * regressor.predict_single_inter(x1_stat, x2, i).squeeze()
+            
+            if create_figure:
+                if len(self.feat_pairs)==1:
+                    plot_object = self.axs_inter.pcolormesh(x1, x2, pred, shading='gouraud')
+                    #self.axs_inter.set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[0][0]],
+                    #                                                      self.feature_names[self.feat_pairs[0][1]]))
+                    self.axs_inter.set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
+                    self.axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
+                    self.axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
+                    
+                    self.axs_inter.set_aspect('equal', 'box')
+                    self.plot_objects_inter.append(plot_object)
+                    plt.show()
+                else:
+                    plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='gouraud')
+                    #self.axs_inter[i].set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[i][0]],
+                    #                                                      self.feature_names[self.feat_pairs[i][1]]))
+                    self.axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
+                    self.axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
+                    self.axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
+                    
+                    self.axs_inter[i].set_aspect('equal', 'box')
+                    self.plot_objects_inter.append(plot_object)
+                    plt.show()
             else:
-                axs[0][i].plot(d['x'], d['y'], c='gray')
-                axs[1][i].bar(d['hist'][1][:-1], d['hist'][0],width=1, color='gray')
-                axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                         d['avg_effect']))
-            if np.max(d['y']) > y_max:
-                y_max = np.max(d['y'])
-            if np.min(d['y']) < y_min:
-                y_min = np.min(d['y'])
-            i += 1
+                plot_object = self.plot_objects_inter[plot_object_counter]
+                plot_object_counter +=1
+                plot_object.set_array(pred)
+                self.fig_inter.canvas.draw()
+                self.fig_inter.canvas.flush_events()
 
-        for i in range(len(feat_names)):
-            # fig.axes[i].set_ylim([y_min+0.05*y_min, y_max+0.05*y_max])
-            axs[1][i].get_xaxis().set_visible(False)
-            axs[1][i].get_yaxis().set_visible(False)
-            #axs[1][i].set
-        plt.show()
+    def plot_interactions_plus_single(self, create_figure=True):
+        if create_figure:
+            plt.close(fig="Interactions_plus_single")
+            self.fig_inter, self.axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(14, 4), num="Interactions_plus_single")
+            plt.subplots_adjust(wspace=0.4)
+            self.plot_objects_inter=[]
+        else:
+            plot_object_counter = 0
+        
+        for i, fp in enumerate(self.feat_pairs):
+            x1 = np.linspace(self.unique[fp[0]].min(), self.unique[fp[0]].max(), 50)
+            x2 = np.linspace(self.unique[fp[1]].min(), self.unique[fp[1]].max(), 50)
+            pred = np.zeros((len(x1), len(x2)))
+            for v in range(pred.shape[0]):
+                x1_stat = x1[v] * np.ones(len(x2))
+                for regressor, boost_rate in zip(self.regressors, 
+                                                 self.boosting_rates):
+                    pred[v,:] += boost_rate * regressor.predict_single_inter(x1_stat, x2, i).squeeze()
+            
+            if self.task == 'classification':
+                single_pred_x1 = self.init_classifier.coef_[0, fp[0]] * x1
+                single_pred_x2 = self.init_classifier.coef_[0, fp[1]] * x2
+            else:
+                single_pred_x1 = self.init_classifier.coef_[fp[0]] * x1
+                single_pred_x2 = self.init_classifier.coef_[fp[1]] * x2
+            # print(pred)
+            for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
+                single_pred_x1 += (boost_rate * regressor.predict_single(x1.reshape(-1, 1), fp[0]).squeeze())
+                single_pred_x2 += (boost_rate * regressor.predict_single(x2.reshape(-1, 1), fp[1]).squeeze())
+            
+            for j in range(pred.shape[0]):
+                pred[j,:] += single_pred_x2
+            
+            for j in range(pred.shape[1]):
+                pred[:,j] += single_pred_x1
+            
+            if create_figure:
+                if len(self.feat_pairs)==1:
+                    plot_object = self.axs_inter.pcolormesh(x1, x2, pred, shading='gouraud')
+                    self.axs_inter.set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
+                    self.axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
+                    self.axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
+                    
+                    self.axs_inter.set_aspect('equal', 'box')
+                    self.plot_objects_inter.append(plot_object)
+                    plt.show()
+                else:
+                    plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='gouraud')
+                    self.axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
+                    self.axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
+                    self.axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
+                    
+                    self.axs_inter[i].set_aspect('equal', 'box')
+                    self.plot_objects_inter.append(plot_object)
+                    plt.show()
+            else:
+                plot_object = self.plot_objects_inter[plot_object_counter]
+                plot_object_counter +=1
+                plot_object.set_array(pred)
+                self.fig_inter.canvas.draw()
+                self.fig_inter.canvas.flush_events()
 
 
     def plot_learning(self):
@@ -797,5 +927,5 @@ if __name__ == '__main__':
     
     sns.scatterplot(data=df,x='x1',y='x2',hue='label')
     
-    m = IGANN(n_estimators=1000, n_hid=7, only_interactions=True, interactions=1, verbose=2)
+    m = IGANN(n_estimators=50000, n_hid=10, elm_alpha=5, boost_rate=1, interactions=1, verbose=1)
     m.fit(df[['x1', 'x2']], df.label)
