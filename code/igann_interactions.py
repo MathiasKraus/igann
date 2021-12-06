@@ -275,7 +275,8 @@ class IGANN:
                     fixed_feat.append(fp[0])
                 if fp[1] not in fixed_feat:
                     fixed_feat.append(fp[1])
-                    
+
+        if self.feat_select != None:            
             features = self._select_features(X, y)
             features.extend([e for e,f in enumerate(self.feature_names) if f in fixed_feat])
             self.feature_names = np.array([f for e, f in enumerate(self.feature_names) if e in features])
