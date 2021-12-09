@@ -277,10 +277,13 @@ class IGANN:
                     fixed_feat.append(fp[1])
 
         if self.feat_select != None:            
-            features = self._select_features(X, y)
-            features.extend([e for e,f in enumerate(self.feature_names) if f in fixed_feat])
-            self.feature_names = np.array([f for e, f in enumerate(self.feature_names) if e in features])
-            X = X[:, features]
+            feature_indizes = self._select_features(X, y)
+            feature_indizes.extend([e for e,f in enumerate(self.feature_names) if f in fixed_feat])
+            self.feature_names = np.array([f for e, f in enumerate(self.feature_names) if e in feature_indizes])
+            X = X[:, feature_indizes]
+            self.feature_indizes = feature_indizes
+        else:
+            self.feature_indizes = np.arange(X.shape[1])
 
         # Fit the linear model on all data
         self.init_classifier.fit(X, y)
@@ -649,6 +652,7 @@ class IGANN:
         '''
         if type(X) == pd.DataFrame:
             X = np.array(X)
+        X = X[:, self.feature_indizes]
         pred_nn = np.zeros(len(X), dtype=np.float32)
         for boost_rate, regressor in zip(self.boosting_rates, self.regressors):
             pred_nn += boost_rate * regressor.predict(X).squeeze()
@@ -829,13 +833,14 @@ class IGANN:
                     
                     self.axs_inter[i].set_aspect('equal', 'box')
                     self.plot_objects_inter.append(plot_object)
-                    plt.show()
+                    
             else:
                 plot_object = self.plot_objects_inter[plot_object_counter]
                 plot_object_counter +=1
                 plot_object.set_array(pred)
                 self.fig_inter.canvas.draw()
                 self.fig_inter.canvas.flush_events()
+        plt.show()
 
     def plot_interactions_plus_single(self, create_figure=True):
         if create_figure:
