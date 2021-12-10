@@ -388,7 +388,6 @@ class IGANN:
         # Sequentially fit one ELM after the other. Max number is stored in self.n_estimators.
         for counter in range(self.n_estimators):
             
-            
             hessian_train_sqrt=self._loss_sqrt_hessian(y, y_hat)
             y_tilde=np.sqrt(0.5)*self._get_y_tilde(y,y_hat)
 
@@ -526,7 +525,8 @@ class IGANN:
             sample = np.random.choice(np.arange(len(X)), size=10000, replace=False)
             X = X[sample]
             y = y[sample]
-            mult_coef = mult_coef[sample]
+            if self.task == 'classification':
+                mult_coef = mult_coef[sample]
         
         regressor = ELM_Regressor(X.shape[1], self.n_hid, [(i,j) for i in range(X.shape[1]) for j in range(X.shape[1])],
                                   scale=self.elm_scale, scale_inter=self.elm_scale_inter, act=self.act)
