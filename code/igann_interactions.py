@@ -357,7 +357,7 @@ class IGANN:
             else:
                 self.feat_pairs = self._find_interactions(X, y_tilde, 1/np.sqrt(0.5)*hessian_train_sqrt[:,np.newaxis])
             
-            print(self.feat_pairs)
+
         self._run_optimization(X, y, y_hat, X_val, y_val, y_hat_val, eval,
                                val_loss_init, plot_fixed_features,
                                feat_pairs=self.feat_pairs)
@@ -667,32 +667,17 @@ class IGANN:
     def get_shape_functions_as_dict(self):
         feature_effects = []
         for i, feat_name in enumerate(self.feature_names):
-            if len(self.unique[i]) < 4:
-                linspac = self.unique[i]
-                if self.task == 'classification':
-                    pred = self.init_classifier.coef_[0, i] * linspac
-                else:
-                    pred = self.init_classifier.coef_[i] * linspac
-                # print(pred)
-                for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
-                    pred += (boost_rate * regressor.predict_single(linspac.reshape(-1, 1), i).squeeze())
-                    # print(pred)
-                feature_effects.append(
-                    {'name': feat_name, 'x': linspac, 
-                     'y': pred, 'avg_effect': np.mean(np.abs(pred)),
-                     'hist': self.hist[i]})
+            linspac = self.unique[i]
+            if self.task == 'classification':
+                pred = self.init_classifier.coef_[0, i] * linspac
             else:
-                linspac = self.unique[i] #np.linspace(self.X_min[i], self.X_max[i], 10000)
-                if self.task == 'classification':
-                    pred = self.init_classifier.coef_[0, i] * linspac
-                else:
-                    pred = self.init_classifier.coef_[i] * linspac
-                for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
-                    pred += boost_rate * regressor.predict_single(linspac.reshape(-1, 1), i).squeeze()
-                feature_effects.append(
-                    {'name': feat_name, 'x': linspac, 
-                     'y': pred, 'avg_effect': np.mean(np.abs(pred)),
-                     'hist': self.hist[i]})
+                pred = self.init_classifier.coef_[i] * linspac
+            for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
+                pred += (boost_rate * regressor.predict_single(linspac.reshape(-1, 1), i).squeeze())
+            feature_effects.append(
+                {'name': feat_name, 'x': linspac, 
+                    'y': pred, 'avg_effect': np.mean(np.abs(pred)),
+                    'hist': self.hist[i]})
 
         overall_effect = np.sum([d['avg_effect'] for d in feature_effects])
         for d in feature_effects:
@@ -719,7 +704,6 @@ class IGANN:
         else:
             create_figure=False
 
-
         if create_figure:
             plt.close(fig="Shape functions")
             self.fig, self.axs = plt.subplots(2, show_n, figsize=(14, 4),
@@ -737,12 +721,14 @@ class IGANN:
             if len(d['x']) < 4:
                 if create_figure:
                     if show_n == 1:
-                        plot_object = self.axs[0].scatter(d['x'], d['y'], c='gray')
+                        plot_object = self.axs[0].bar(d['x'], d['y'], color='black', 
+                                                      width = 0.1*(d['x'].max() - d['x'].min()))
                         self.axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
                         self.axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']), 
                                                                     d['avg_effect']))
                     else:
-                        plot_object = self.axs[0][i].scatter(d['x'], d['y'], c='gray')
+                        plot_object = self.axs[0][i].bar(d['x'], d['y'], color='black', 
+                                                      width = 0.1*(d['x'].max() - d['x'].min()))
                         self.axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
                         self.axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']), 
                                                                        d['avg_effect']))
@@ -753,19 +739,19 @@ class IGANN:
                 else:
                     plot_object = self.plot_objects[plot_object_counter]
                     plot_object_counter += 1
-                    plot_object.set_data(d['x'],d['y'])
+                    plot_object.set_data(d['x'], d['y'])
                     self.axs[0][i].set_ylim(bottom=min(d['y']), top=max(d['y']))
                     self.fig.canvas.draw_idle()
                     self.fig.canvas.flush_events()
             else:
                 if create_figure:
                     if show_n == 1:
-                        plot_object = self.axs[0].plot(d['x'], d['y'], c='gray')
+                        plot_object = self.axs[0].plot(d['x'], d['y'], c='black')
                         self.axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
                         self.axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                               d['avg_effect']))
                     else:
-                        plot_object = self.axs[0][i].plot(d['x'], d['y'], c='gray')
+                        plot_object = self.axs[0][i].plot(d['x'], d['y'], c='black')
                         self.axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
                         self.axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                                        d['avg_effect']))
@@ -933,5 +919,5 @@ if __name__ == '__main__':
     
     sns.scatterplot(data=df,x='x1',y='x2',hue='label')
     
-    m = IGANN(n_estimators=50000, n_hid=10, elm_alpha=5, boost_rate=1, interactions=1, verbose=1)
+    m = IGANN(n_estimators=50000, n_hid=10, elm_alpha=5, boost_rate=1, interactions=1, verbose=2)
     m.fit(df[['x1', 'x2']], df.label)
