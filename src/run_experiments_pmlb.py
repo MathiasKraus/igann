@@ -330,7 +330,7 @@ if task == 'regression':
                     train_ll = mean_squared_error(y_train, m.predict(X_train))
                     test_ll = mean_squared_error(y_test, m.predict(X_test))
             
-                    with open(f'results/{model}_results.csv', 'a') as fd:
+                    with open(f'../results/{model}_results.csv', 'a') as fd:
                         fd.write(f'{model};{para_string};{regression_dataset};{fold};{train_ll};{test_ll}\n')
         
                 except:
@@ -362,10 +362,13 @@ elif task == 'classification':
             X_test = scaler.transform(X[test_index])
 
             def map_label(label):
-                if label == 1:
+                if label == 1 or label == 3:
                     return 1
                 else:
-                    return -1
+                    if model == 'gam':
+                        return 0
+                    else:
+                        return -1
 
             y_train = [map_label(x) for x in y[train_index]]
             y_test = [map_label(x) for x in y[test_index]]
@@ -381,7 +384,7 @@ elif task == 'classification':
                     train_ll = log_loss(y_train, m.predict(X_train))
                     test_ll = log_loss(y_test, m.predict(X_test))
 
-                    with open(f'results/{model}_results.csv', 'a') as fd:
+                    with open(f'../results/{model}_results.csv', 'a') as fd:
                         fd.write(f'{model};{para_string};{classification_dataset};{fold};{train_ll};{test_ll}\n')
                 except:
                     continue
