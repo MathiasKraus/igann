@@ -25,8 +25,8 @@ import seaborn as sb
 
 from pmlb import fetch_data, classification_dataset_names, regression_dataset_names
 
-task = 'regression'
-model = 'igann'
+task = 'classification'
+model = 'gam'
 
 if task == 'regression':
     model_pool = {
@@ -120,16 +120,16 @@ if task == 'regression':
 elif task == "classification":
     model_pool = {
         'log':
-            [('1e-5', LogisticRegression(alpha=1e-5, max_iter=10000)),
-             ('1e-4', LogisticRegression(alpha=1e-4, max_iter=10000)),
-             ('1e-3', LogisticRegression(alpha=1e-3, max_iter=10000)),
-             ('1e-2', LogisticRegression(alpha=1e-2, max_iter=10000)),
-             ('1e-1', LogisticRegression(alpha=1e-1, max_iter=10000)),
-             ('1e0', LogisticRegression(alpha=1e0, max_iter=10000)),
-             ('1e1', LogisticRegression(alpha=1e1, max_iter=10000)),
-             ('1e2', LogisticRegression(alpha=1e2, max_iter=10000)),
-             ('1e3', LogisticRegression(alpha=1e3, max_iter=10000)),
-             ('1e4', LogisticRegression(alpha=1e4, max_iter=10000))],
+            [('1e-5', LogisticRegression(C=1e-5, max_iter=10000)),
+             ('1e-4', LogisticRegression(C=1e-4, max_iter=10000)),
+             ('1e-3', LogisticRegression(C=1e-3, max_iter=10000)),
+             ('1e-2', LogisticRegression(C=1e-2, max_iter=10000)),
+             ('1e-1', LogisticRegression(C=1e-1, max_iter=10000)),
+             ('1e0', LogisticRegression(C=1e0, max_iter=10000)),
+             ('1e1', LogisticRegression(C=1e1, max_iter=10000)),
+             ('1e2', LogisticRegression(C=1e2, max_iter=10000)),
+             ('1e3', LogisticRegression(C=1e3, max_iter=10000)),
+             ('1e4', LogisticRegression(C=1e4, max_iter=10000))],
         'ridge':
            [('1e-5', RidgeClassifier(alpha=1e-5)),
             ('1e-4', RidgeClassifier(alpha=1e-4)),
@@ -141,6 +141,27 @@ elif task == "classification":
             ('1e2', RidgeClassifier(alpha=1e2)),
             ('1e3', RidgeClassifier(alpha=1e3)),
             ('1e4', RidgeClassifier(alpha=1e4))],
+        'gam':
+            [('5_0.2', partial(terms.s, n_splines=5, lam=0.2)),
+             ('5_0.5', partial(terms.s, n_splines=5, lam=0.5)),
+             ('5_0.7', partial(terms.s, n_splines=5, lam=0.7)),
+             ('5_0.9', partial(terms.s, n_splines=5, lam=0.9)),
+             ('10_0.2', partial(terms.s, n_splines=10, lam=0.2)),
+             ('10_0.5', partial(terms.s, n_splines=10, lam=0.5)),
+             ('10_0.7', partial(terms.s, n_splines=10, lam=0.7)),
+             ('10_0.9', partial(terms.s, n_splines=10, lam=0.9)),
+             ('15_0.2', partial(terms.s, n_splines=15, lam=0.2)),
+             ('15_0.5', partial(terms.s, n_splines=15, lam=0.5)),
+             ('15_0.7', partial(terms.s, n_splines=15, lam=0.7)),
+             ('15_0.9', partial(terms.s, n_splines=15, lam=0.9)),
+             ('20_0.2', partial(terms.s, n_splines=20, lam=0.2)),
+             ('20_0.5', partial(terms.s, n_splines=20, lam=0.5)),
+             ('20_0.7', partial(terms.s, n_splines=20, lam=0.7)),
+             ('20_0.9', partial(terms.s, n_splines=20, lam=0.9)),
+             ('25_0.2', partial(terms.s, n_splines=25, lam=0.2)),
+             ('25_0.5', partial(terms.s, n_splines=25, lam=0.5)),
+             ('25_0.7', partial(terms.s, n_splines=25, lam=0.7)),
+             ('25_0.9', partial(terms.s, n_splines=25, lam=0.9))],
         'ebm':
            [('4_0', ExplainableBoostingClassifier(outer_bags=4, inner_bags=0)),
             ('8_0', ExplainableBoostingClassifier(outer_bags=8, inner_bags=0)),
@@ -352,7 +373,7 @@ elif task == 'classification':
             for para_string, m in model_pool[model]:
                 try:
                     if model == 'gam':
-                        m = LinearGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
+                        m = LogisticGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
                     elif model == 'ebm':
                         m = deepcopy(m)
                     m.fit(X_train, y_train)
