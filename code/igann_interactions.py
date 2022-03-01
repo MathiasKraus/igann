@@ -143,7 +143,7 @@ class ELM_Regressor():
         X_hid = self.get_hidden_values(X)*mult_coef
 
         # Fit the ridge regression on the hidden values.
-        m = Ridge(alpha=self.elm_alpha, fit_intercept=False)
+        m = Ridge(alpha=self.elm_alpha, tol=0.01, fit_intercept=False)
         # TODO: Intercept?
         with sklearn.config_context(assume_finite=True):
             m.fit(X_hid, y)
@@ -778,10 +778,48 @@ class IGANN:
                     self.axs[1][i].get_yaxis().set_visible(False)
             plt.show()
 
+    def plot_interactions_categorical_continuous(self, cat_feat, cont_feat, feat_pair_num):
+        #plt.close(fig="Interactions")
+        #self.fig_inter, self.axs_inter = plt.subplots(1, 1, figsize=(14, 10), num="Interactions")
+        #plt.subplots_adjust(wspace=0.4)
+
+        for x1 in self.unique[cat_feat]:
+            x2 = np.linspace(self.unique[cont_feat].min(), self.unique[cont_feat].max(), 200)
+            pred = np.zeros(len(x2))
+            x1_stat = x1 * np.ones(len(x2))
+
+            for regressor, boost_rate in zip(self.regressors, 
+                                                self.boosting_rates):
+                if cat_feat < cont_feat:
+                    pred += boost_rate * regressor.predict_single_inter(x1_stat, x2, feat_pair_num).squeeze()
+                else:
+                    pred += boost_rate * regressor.predict_single_inter(x2, x1_stat, feat_pair_num).squeeze()
+        
+            if self.task == 'classification':
+                single_pred_x1 = self.init_classifier.coef_[0, cat_feat] * x1
+                single_pred_x2 = self.init_classifier.coef_[0, cont_feat] * x2
+            else:
+                single_pred_x1 = self.init_classifier.coef_[cat_feat] * x1
+                single_pred_x2 = self.init_classifier.coef_[cont_feat] * x2
+
+            for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
+                single_pred_x1 += (boost_rate * regressor.predict_single(x1.reshape(-1, 1), cat_feat).squeeze())
+                single_pred_x2 += (boost_rate * regressor.predict_single(x2.reshape(-1, 1), cont_feat).squeeze())
+            
+            
+            pred += single_pred_x2
+            pred += single_pred_x1
+
+            plt.plot(x2, pred, label=str(x1))
+        
+        plt.legend()
+        plt.show()
+            
+
     def plot_interactions(self, create_figure=True):
         if create_figure:
             plt.close(fig="Interactions")
-            self.fig_inter, self.axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(14, 4), num="Interactions")
+            self.fig_inter, self.axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(14, 10), num="Interactions")
             plt.subplots_adjust(wspace=0.4)
             self.plot_objects_inter=[]
         else:
@@ -799,7 +837,7 @@ class IGANN:
             
             if create_figure:
                 if len(self.feat_pairs)==1:
-                    plot_object = self.axs_inter.pcolormesh(x1, x2, pred, shading='gouraud')
+                    plot_object = self.axs_inter.pcolormesh(x1, x2, pred, shading='nearest')
                     #self.axs_inter.set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[0][0]],
                     #                                                      self.feature_names[self.feat_pairs[0][1]]))
                     self.axs_inter.set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
@@ -810,7 +848,7 @@ class IGANN:
                     self.plot_objects_inter.append(plot_object)
                     plt.show()
                 else:
-                    plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='gouraud')
+                    plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='nearest')
                     #self.axs_inter[i].set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[i][0]],
                     #                                                      self.feature_names[self.feat_pairs[i][1]]))
                     self.axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
@@ -866,7 +904,7 @@ class IGANN:
             
             if create_figure:
                 if len(self.feat_pairs)==1:
-                    plot_object = self.axs_inter.pcolormesh(x1, x2, pred, shading='gouraud')
+                    plot_object = self.axs_inter.pcolormesh(x1, x2, pred, shading='nearest')
                     self.axs_inter.set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
                     self.axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
                     self.axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
@@ -875,7 +913,7 @@ class IGANN:
                     self.plot_objects_inter.append(plot_object)
                     plt.show()
                 else:
-                    plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='gouraud')
+                    plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='nearest')
                     self.axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
                     self.axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
                     self.axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
@@ -905,6 +943,22 @@ class IGANN:
         plt.show()
 
 if __name__ == '__main__':
+    inputs = np.random.random((1000, 10))
+    inputs[:100, -1] *= -1
+    targets = np.random.random((1000, 1))
+    targets[:100] *= 2
+
+    print(np.mean(targets[:100]))
+    print(np.mean(targets[100:]))
+
+    binary_groups = np.array([0] * 100 + [1] * 900, dtype=np.int32)
+    
+    m = IGANN(task='regression', n_estimators=3, n_hid=5, boost_rate=0.3, interactions=0, verbose=2)
+    m.fit(inputs, targets.squeeze())
+    
+    aaa
+    
+    
     from sklearn.datasets import make_circles
     import seaborn as sns
     
