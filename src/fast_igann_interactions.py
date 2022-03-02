@@ -1,21 +1,21 @@
 import numpy as np
 import pandas as pd
-#import numexpr as ne
+import numexpr as ne
 from numba import njit
 import sklearn
 from sklearn.linear_model import Ridge, LogisticRegression, Lasso
-from sklearn.metrics import roc_auc_score#, log_loss#, mean_squared_error
+from sklearn.metrics import roc_auc_score, log_loss#, mean_squared_error
 from sklearn.model_selection import train_test_split
-from scipy.linalg import block_diag
+from scipy import linalg
 import matplotlib.pyplot as plt
 
 @njit
 def act(x):
     return (np.exp(x) - 1) * (x <= 0) + x*(x > 0)
 
-# @njit 
+# @njit
 # def act(x):
-#     return (x*(1 + x/2*(1 + x/3*(1 + x/4)))) * (x <= 0) + x*(x > 0)
+#     return 0 * (x <= 0) + x*(x > 0)
 
 # @njit
 # def act(x):
@@ -27,12 +27,25 @@ def act(x):
 def mean_squared_error(y_true, y_pred):
     return ((y_true - y_pred)**2).mean()
 
-def log_loss(y_true, y_pred, eps=1e-15):
-    y_pred = np.clip(y_pred, eps, 1 - eps)
-    return -(y_true*np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred)).mean()
+# def act(x):
+    # return ne.evaluate('((1 + x*(1 + x/2*(1 + x/3))) - 1) * (x <= 0) + x * (x > 0)')
 
-#def act(x):
-#    return ne.evaluate('0.5*x*(1 + tanh(1 * (x + 3 * x ** 3)))')
+class Cholesky_Ridge():
+    def __init__(self, alpha):
+        self.coef_ = None
+        self.alpha = alpha
+        
+    def fit(self, X, y):
+        try:
+            self.coef_ = np.linalg.inv(X.T.dot(X) + self.alpha * np.eye(X.shape[1])).dot(X.T).dot(y)
+        except linalg.LinAlgError:
+            # use SVD solver if matrix is singular
+            m = Ridge(alpha=self.alpha, fit_intercept=False, solver='svd')
+            m.fit(X, y)
+            self.coef_ = m.coef_
+        
+    def predict(self, X):
+        return np.dot(X, self.coef_)
 
 class ELM_Regressor():
     '''
@@ -45,7 +58,7 @@ class ELM_Regressor():
     our case).
     See wikipedia and google for more details .
     '''
-    def __init__(self, n_input, n_hid, feat_pairs, seed=0, scale=1, scale_inter=0.5, elm_alpha=1):
+    def __init__(self, n_input, n_hid, feat_pairs, seed=0, scale=10, scale_inter=1, elm_alpha=0.0001, act='elu'):
         '''
         Input parameters:
         - n_input: number of inputs/features for your task (shape[1] of your X matrix)
@@ -61,15 +74,18 @@ class ELM_Regressor():
         - scale_inter: scale of the interaction ELMs
         - elm_alpha: the regularization of the ridge regression. I didn't find this to have
         a huge impact, but let's try it out...
+        - act: the activation function in the model. I mainly used 'elu' which works well,
+        'relu' is kind of a mess, 'gelu' also provides nice results.
         '''
         super().__init__()
         np.random.seed(seed)
         # The following are the random weights in the model which are not optimized. 
         # self.hidden_list = [np.random.normal(scale=scale, size=(1, n_hid)) for _ in range(n_input)]
         self.hidden_list = np.random.normal(scale=scale, size=(n_input, n_input * n_hid))
+        # self.hidden_list = np.random.lognormal(scale=scale, size=(n_input, n_input * n_hid))
         
         #create mask
-        mask = block_diag(*[np.ones(n_hid)] * n_input)
+        mask = linalg.block_diag(*[np.ones(n_hid)] * n_input)
         self.hidden_mat = np.multiply(self.hidden_list, mask) 
         
         self.hidden_list_inter = [(np.random.normal(scale=scale_inter, size=(1, n_hid)),
@@ -81,6 +97,7 @@ class ELM_Regressor():
         self.scale = scale
         self.scale_inter = scale_inter
         self.elm_alpha = elm_alpha
+        self.rand_act = act
     
     def get_hidden_values(self, X):
         '''
@@ -91,6 +108,13 @@ class ELM_Regressor():
         '''
         X_hid = np.dot(X, self.hidden_mat)
         X_hid = act(X_hid)
+        
+        # X_hid = np.zeros((X.shape[0], (X.shape[1] + len(self.feat_pairs)) * self.n_hid))
+        # for i in range(X.shape[1]):
+            # x_in = np.expand_dims(X[:, i], 1)
+            # x_in = np.dot(x_in, self.hidden_list[i])
+            # x_in = act(x_in)
+            # X_hid[:, i * self.n_hid:(i + 1) * self.n_hid] = x_in
         
         starting_index = X.shape[1] * self.n_hid
             
@@ -115,8 +139,9 @@ class ELM_Regressor():
 
         # Now, we can use the values in the hidden layer to make the prediction with
         # our ridge regression
-        with sklearn.config_context(assume_finite=True):
-            out = self.output_model.predict(X_hid)
+        #with sklearn.config_context(assume_finite=True):
+        #    out = self.output_model.predict(X_hid)
+        out = np.dot(X_hid, self.output_model.coef_)
         return out
 
     def predict_single(self, x, i):
@@ -163,9 +188,12 @@ class ELM_Regressor():
         X_hid = self.get_hidden_values(X)
         X_hid_mult = X_hid*mult_coef
         # Fit the ridge regression on the hidden values.
-        m = Ridge(alpha=self.elm_alpha, tol=0.01, fit_intercept=False)
-        with sklearn.config_context(assume_finite=True):
-            m.fit(X_hid_mult, y)
+        # m = Ridge(alpha=self.elm_alpha, tol=0.01, fit_intercept=False)
+        # TODO: Intercept?
+        # with sklearn.config_context(assume_finite=True):
+            # m.fit(X_hid_mult, y)
+        m = Cholesky_Ridge(alpha=self.elm_alpha)
+        m.fit(X_hid_mult, y)
         self.output_model = m
         return X_hid
 
@@ -178,10 +206,10 @@ class IGANN:
     The model first fits a linear model and then subsequently, train ELMs on the gradients of the
     previous prediction (the boosting idea).
     '''
-    def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=1.0, init_reg=1.0, 
-    		     elm_scale=1, elm_scale_inter=0.5, elm_alpha=1, feat_select=None, interactions=0, 
-                 early_stopping=50, random_state=1,
-                 verbose=1):
+    def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1, 
+    		 elm_scale=1, elm_scale_inter=0.5, elm_alpha=1, feat_select=None, interactions=0, 
+                 act='elu', early_stopping=50, random_state=1,
+                 verbose=0):
         '''
         Initialize the model. Input parameters:
         task: defines the task, can be 'regression' or 'classification'
@@ -196,6 +224,7 @@ class IGANN:
         elm_alpha: the regularization strength for the ridge regression in the ELM model.
         feat_select: Integer that says how many features should be selected
         interactions: the number of interactions that should be fit.
+        act: the activation function in the ELM model.
         early_stopping: we use early stopping which means that we don't continue training more ELM 
         models, if there as been no improvements for 'early_stopping' number of iterations.
         random_state: should take the randomness away. Probably needs to be fixed - I am not good
@@ -209,6 +238,7 @@ class IGANN:
         self.elm_scale_inter = elm_scale_inter
         self.elm_alpha = elm_alpha
         self.init_reg = init_reg
+        self.act = act
         self.n_estimators = n_estimators
         self.early_stopping = early_stopping
         self.feat_select = feat_select
@@ -227,10 +257,10 @@ class IGANN:
         self.boost_rate = boost_rate
 
         if task == 'classification':
-            self.init_classifier = LogisticRegression(penalty='l1', solver='liblinear', C=self.init_reg,
+            self.init_classifier = LogisticRegression(penalty='l1', solver='liblinear', C=1/self.init_reg,
                                                       random_state=random_state)
         elif task == 'regression':
-            self.init_classifier = Lasso(alpha=1/self.init_reg)
+            self.init_classifier = Lasso(alpha=self.init_reg)
         else:
             print('Task not implemented. Can be classification or regression')
     
@@ -253,6 +283,17 @@ class IGANN:
         x[x <= 0] = np.exp(x[x <= 0]) - 1
         return x
 
+    def _reset_state(self):
+        self.top_k_features = []
+        self.regressors = []
+        self.boosting_rates = []
+        self.train_scores = []
+        self.val_scores = []
+        self.train_losses = []
+        self.val_losses = []
+        self.test_losses = []
+        self.regressor_predictions = []
+
     def fit(self, X, y, feat_pairs=None, fixed_feat=[],
             val_set=None, eval=None, plot_fixed_features=None):
         '''
@@ -269,6 +310,9 @@ class IGANN:
         plot_fixed_features: Usually, the most important features are plotted for verbose=2.
         This can be changed here to keep track of the same feature throughout training.
         '''
+        
+        self._reset_state()
+
         if type(X) == pd.DataFrame:
             self.feature_names = X.columns
             X = X.values
@@ -302,11 +346,9 @@ class IGANN:
             self.feature_indizes = feature_indizes
         else:
             self.feature_indizes = np.arange(X.shape[1])
-
+        
         # Fit the linear model on all data
         self.init_classifier.fit(X, y)
-
-        print(self.init_classifier.coef_)
 
         # Split the data into train and validation data and compute the prediction of the
         # linear model. For regression this is straightforward, for classification, we 
@@ -324,13 +366,15 @@ class IGANN:
                 self.init_classifier.intercept_)
         else:
             if val_set == None:
+                if self.verbose >=1:
+                    print('Splitting data')
                 X, X_val, y, y_val = train_test_split(X, y, test_size=0.15, random_state=self.random_state)
             else:
                 X_val = val_set[0]
-                y_val = val_set[1]
+                y_val = val_set[1].squeeze()
             y_hat = self.init_classifier.predict(X).squeeze()
             y_hat_val = self.init_classifier.predict(X_val).squeeze()
-
+           
         # Store some information about the dataset which we later use for plotting.
         self.X_min = list(X.min(axis=0))
         self.X_max = list(X.max(axis=0))
@@ -356,6 +400,7 @@ class IGANN:
         
         if self.verbose >= 1:
             print('Train: {:.4f} Val: {:.4f} {}'.format(train_loss_init, val_loss_init, 'init'))
+
 
         if self.interactions==0:
             self.feat_pairs = []
@@ -412,9 +457,8 @@ class IGANN:
 
             # Fit an ELM on y_tilde_tilde
             regressor = ELM_Regressor(n_input=X.shape[1], n_hid=self.n_hid, 
-                                      feat_pairs=feat_pairs, seed=counter, 
-                                      scale=self.elm_scale, scale_inter=self.elm_scale_inter, 
-                                      elm_alpha=self.elm_alpha)
+                                      feat_pairs=feat_pairs, seed=counter, scale=self.elm_scale, scale_inter=self.elm_scale_inter, elm_alpha=self.elm_alpha,
+                                      act=self.act)
             
             # Fit  ELM regressor
             X_hid = regressor.fit(X, y_tilde, np.sqrt(0.5)*self.boost_rate*hessian_train_sqrt[:,np.newaxis])
@@ -430,18 +474,19 @@ class IGANN:
             y_hat_val += self.boost_rate * val_regressor_pred
             
             if self.task == 'classification':
-                val_pred_prob = 1 / (1 + np.exp(-y_hat_val))             
-                val_loss = log_loss(y_val, val_pred_prob) 
-                
+                val_pred_prob = 1 / (1 + np.exp(-y_hat_val))
                 train_pred_prob = 1 / (1 + np.exp(-y_hat))
+
+                val_auc = roc_auc_score(y_val, val_pred_prob)
+                val_loss = log_loss(y_val, val_pred_prob)
+
+                train_auc = roc_auc_score(y, train_pred_prob)
                 train_loss = log_loss(y, train_pred_prob)
             else:
                 val_mse = mean_squared_error(y_val, y_hat_val)
                 val_loss = val_mse
-                
                 train_mse = mean_squared_error(y, y_hat)
                 train_loss = train_mse
-                
 
             # Keep the ELM, the boosting rate and losses in lists, so 
             # we can later use them again.
@@ -461,8 +506,6 @@ class IGANN:
 
             if self.verbose >= 1:
                 if self.task == 'classification':
-                    train_auc = roc_auc_score(y, train_pred_prob)
-                    val_auc = roc_auc_score(y_val, val_pred_prob)
                     self._print_results(counter, counter_no_progress, eval, self.boost_rate, train_auc,
                                        train_loss, val_auc, val_loss)
                 else:
@@ -496,7 +539,7 @@ class IGANN:
 
     def _select_features(self, X, y):
         regressor = ELM_Regressor(X.shape[1], self.n_hid, [],
-                                  scale=self.elm_scale, scale_inter=self.elm_scale_inter)
+                                  scale=self.elm_scale, scale_inter=self.elm_scale_inter, act=self.act)
         X_tilde = regressor.get_hidden_values(X)
 
         lower_bound = 1e-10
@@ -550,7 +593,7 @@ class IGANN:
                 mult_coef = mult_coef[sample]
         
         regressor = ELM_Regressor(X.shape[1], self.n_hid, [(i,j) for i in range(X.shape[1]) for j in range(X.shape[1])],
-                                  scale=self.elm_scale, scale_inter=self.elm_scale_inter)
+                                  scale=self.elm_scale, scale_inter=self.elm_scale_inter, act=self.act)
         X_tilde = regressor.get_hidden_values(X)
         X_tilde_tilde = X_tilde*mult_coef
 
