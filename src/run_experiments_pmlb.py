@@ -26,7 +26,7 @@ import seaborn as sb
 from pmlb import fetch_data, classification_dataset_names, regression_dataset_names
 
 task = 'classification'
-model = 'gam'
+model = 'igann'
 
 if task == 'regression':
     model_pool = {
@@ -300,10 +300,10 @@ if task == 'regression':
     for regression_dataset in regression_dataset_names:
         print(f'{c}: {regression_dataset}')
         X, y = fetch_data(regression_dataset, return_X_y=True, local_cache_dir='../data/pmlb/regression')
-        if X.shape[1] > 10: # 100
+        if X.shape[1] > 100: # 100
             continue
        
-        if X.shape[0] > 100: # 100000
+        if X.shape[0] > 1000: # 100000
             continue
 
         kf = KFold(shuffle=True, random_state=42)
@@ -340,6 +340,7 @@ if task == 'regression':
 
 
 elif task == 'classification':
+    #todo: igann error - 'list' object has no attribute 'squeeze'
     df = pd.DataFrame(columns=['dataset', 'fold', 'train_loss', 'test_loss'])
 
     c = 0
@@ -374,8 +375,9 @@ elif task == 'classification':
             y_test = [map_label(x) for x in y[test_index]]
 
             for para_string, m in model_pool[model]:
-                try:
+                # try:
                     if model == 'gam':
+                        # todo: RuntimeWarning: invalid value encountered in true_divide
                         m = LogisticGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
                     elif model == 'ebm':
                         m = deepcopy(m)
@@ -386,7 +388,7 @@ elif task == 'classification':
 
                     with open(f'../results/{model}_results.csv', 'a') as fd:
                         fd.write(f'{model};{para_string};{classification_dataset};{fold};{train_ll};{test_ll}\n')
-                except:
-                    continue
+                # except:
+                #    continue
             fold += 1
         c += 1
