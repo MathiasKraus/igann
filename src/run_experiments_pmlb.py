@@ -16,6 +16,7 @@ from pygam import terms
 from interpret.glassbox import ExplainableBoostingRegressor, ExplainableBoostingClassifier
 import pandas as pd
 import numpy as np
+import argparse
 from copy import deepcopy
 from functools import partial
 from src.fast_igann_interactions import IGANN
@@ -25,8 +26,16 @@ import seaborn as sb
 
 from pmlb import fetch_data, classification_dataset_names, regression_dataset_names
 
-task = 'classification'
-model = 'igann'
+parser = argparse.ArgumentParser()
+parser.add_argument('--task', type=str, required=True)
+parser.add_argument('--model', type=str, required=True)
+
+args = parser.parse_args()
+task = args.task
+model = args.model
+
+#task = 'classification'
+#model = 'lasso'
 
 if task == 'regression':
     model_pool = {
@@ -330,7 +339,7 @@ if task == 'regression':
                     train_ll = mean_squared_error(y_train, m.predict(X_train))
                     test_ll = mean_squared_error(y_test, m.predict(X_test))
             
-                    with open(f'../results/{model}_results.csv', 'a') as fd:
+                    with open(f'results/{model}_results.csv', 'a') as fd:
                         fd.write(f'{model};{para_string};{regression_dataset};{fold};{train_ll};{test_ll}\n')
         
                 except:
@@ -386,7 +395,7 @@ elif task == 'classification':
                     train_ll = log_loss(y_train, m.predict(X_train))
                     test_ll = log_loss(y_test, m.predict(X_test))
 
-                    with open(f'../results/{model}_results.csv', 'a') as fd:
+                    with open(f'results/{model}_results.csv', 'a') as fd:
                         fd.write(f'{model};{para_string};{classification_dataset};{fold};{train_ll};{test_ll}\n')
                 # except:
                 #    continue
