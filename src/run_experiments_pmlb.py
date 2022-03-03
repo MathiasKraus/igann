@@ -18,6 +18,7 @@ import pandas as pd
 import numpy as np
 import argparse
 from copy import deepcopy
+from itertools import product
 from functools import partial
 from src.fast_igann_interactions import IGANN
 
@@ -83,47 +84,30 @@ if task == 'regression':
             ('25_0.7', partial(terms.s, n_splines=25, lam=0.7)),
             ('25_0.9', partial(terms.s, n_splines=25, lam=0.9))],
          'ebm':
-           [('4_0', ExplainableBoostingRegressor(outer_bags=4, inner_bags=0)),
-            ('8_0', ExplainableBoostingRegressor(outer_bags=8, inner_bags=0)),
-            ('16_0', ExplainableBoostingRegressor(outer_bags=16, inner_bags=0)),
-            ('24_0', ExplainableBoostingRegressor(outer_bags=24, inner_bags=0)),
-           ('4_2', ExplainableBoostingRegressor(outer_bags=4, inner_bags=2)),
-            ('8_2', ExplainableBoostingRegressor(outer_bags=8, inner_bags=2)),
-            ('16_2', ExplainableBoostingRegressor(outer_bags=16, inner_bags=2)),
-            ('24_2', ExplainableBoostingRegressor(outer_bags=24, inner_bags=2)),
-           ('4_4', ExplainableBoostingRegressor(outer_bags=4, inner_bags=4)),
-            ('8_4', ExplainableBoostingRegressor(outer_bags=8, inner_bags=4)),
-            ('16_4', ExplainableBoostingRegressor(outer_bags=16, inner_bags=4)),
-            ('24_4', ExplainableBoostingRegressor(outer_bags=24, inner_bags=4)),
-           ('4_8', ExplainableBoostingRegressor(outer_bags=4, inner_bags=8)),
-            ('8_8', ExplainableBoostingRegressor(outer_bags=8, inner_bags=8)),
-            ('16_8', ExplainableBoostingRegressor(outer_bags=16, inner_bags=8)),
-            ('24_8', ExplainableBoostingRegressor(outer_bags=24, inner_bags=8))],
+           [('4_0', ExplainableBoostingRegressor(outer_bags=4, inner_bags=0, interactions=0)),
+            ('8_0', ExplainableBoostingRegressor(outer_bags=8, inner_bags=0, interactions=0)),
+            ('16_0', ExplainableBoostingRegressor(outer_bags=16, inner_bags=0, interactions=0)),
+            ('24_0', ExplainableBoostingRegressor(outer_bags=24, inner_bags=0, interactions=0)),
+           ('4_2', ExplainableBoostingRegressor(outer_bags=4, inner_bags=2, interactions=0)),
+            ('8_2', ExplainableBoostingRegressor(outer_bags=8, inner_bags=2, interactions=0)),
+            ('16_2', ExplainableBoostingRegressor(outer_bags=16, inner_bags=2, interactions=0)),
+            ('24_2', ExplainableBoostingRegressor(outer_bags=24, inner_bags=2, interactions=0)),
+           ('4_4', ExplainableBoostingRegressor(outer_bags=4, inner_bags=4, interactions=0)),
+            ('8_4', ExplainableBoostingRegressor(outer_bags=8, inner_bags=4, interactions=0)),
+            ('16_4', ExplainableBoostingRegressor(outer_bags=16, inner_bags=4, interactions=0)),
+            ('24_4', ExplainableBoostingRegressor(outer_bags=24, inner_bags=4, interactions=0)),
+           ('4_8', ExplainableBoostingRegressor(outer_bags=4, inner_bags=8, interactions=0)),
+            ('8_8', ExplainableBoostingRegressor(outer_bags=8, inner_bags=8, interactions=0)),
+            ('16_8', ExplainableBoostingRegressor(outer_bags=16, inner_bags=8, interactions=0)),
+            ('24_8', ExplainableBoostingRegressor(outer_bags=24, inner_bags=8, interactions=0))],
           'igann':
-           [('0.1_1_1e-5', IGANN(task='regression', n_estimators=10000, boost_rate=0.1, elm_scale=1, elm_alpha=1e-5)), 
-            ('0.1_1_1e-3', IGANN(task='regression', n_estimators=10000, boost_rate=0.1, elm_scale=1, elm_alpha=1e-3)), 
-            ('0.1_1_1e-1', IGANN(task='regression', n_estimators=10000, boost_rate=0.1, elm_scale=1, elm_alpha=1e-1)), 
-            ('0.1_1_1', IGANN(task='regression', n_estimators=10000, boost_rate=0.1, elm_scale=1, elm_alpha=1)), 
-            ('0.1_3_1e-5', IGANN(task='regression', n_estimators=10000, boost_rate=0.1, elm_scale=3, elm_alpha=1e-5)), 
-            ('0.1_3_1e-3', IGANN(task='regression', n_estimators=10000, boost_rate=0.1, elm_scale=3, elm_alpha=1e-3)), 
-            ('0.1_3_1e-1', IGANN(task='regression', n_estimators=10000, boost_rate=0.1, elm_scale=3, elm_alpha=1e-1)), 
-            ('0.1_3_1', IGANN(task='regression', n_estimators=10000, boost_rate=0.1, elm_scale=3, elm_alpha=1)), 
-            ('0.5_1_1e-5', IGANN(task='regression', n_estimators=10000, boost_rate=0.5, elm_scale=1, elm_alpha=1e-5)), 
-            ('0.5_1_1e-3', IGANN(task='regression', n_estimators=10000, boost_rate=0.5, elm_scale=1, elm_alpha=1e-3)), 
-            ('0.5_1_1e-1', IGANN(task='regression', n_estimators=10000, boost_rate=0.5, elm_scale=1, elm_alpha=1e-1)), 
-            ('0.5_1_1', IGANN(task='regression', n_estimators=10000, boost_rate=0.5, elm_scale=1, elm_alpha=1)), 
-            ('0.5_3_1e-5', IGANN(task='regression', n_estimators=10000, boost_rate=0.5, elm_scale=3, elm_alpha=1e-5)), 
-            ('0.5_3_1e-3', IGANN(task='regression', n_estimators=10000, boost_rate=0.5, elm_scale=3, elm_alpha=1e-3)), 
-            ('0.5_3_1e-1', IGANN(task='regression', n_estimators=10000, boost_rate=0.5, elm_scale=3, elm_alpha=1e-1)), 
-            ('0.5_3_1', IGANN(task='regression', n_estimators=10000, boost_rate=0.5, elm_scale=3, elm_alpha=1)), 
-            ('1.0_1_1e-5', IGANN(task='regression', n_estimators=10000, boost_rate=1.0, elm_scale=1, elm_alpha=1e-5)), 
-            ('1.0_1_1e-3', IGANN(task='regression', n_estimators=10000, boost_rate=1.0, elm_scale=1, elm_alpha=1e-3)), 
-            ('1.0_1_1e-1', IGANN(task='regression', n_estimators=10000, boost_rate=1.0, elm_scale=1, elm_alpha=1e-1)), 
-            ('1.0_1_1', IGANN(task='regression', n_estimators=10000, boost_rate=1.0, elm_scale=1, elm_alpha=1)), 
-            ('1.0_3_1e-5', IGANN(task='regression', n_estimators=10000, boost_rate=1.0, elm_scale=3, elm_alpha=1e-5)), 
-            ('1.0_3_1e-3', IGANN(task='regression', n_estimators=10000, boost_rate=1.0, elm_scale=3, elm_alpha=1e-3)), 
-            ('1.0_3_1e-1', IGANN(task='regression', n_estimators=10000, boost_rate=1.0, elm_scale=3, elm_alpha=1e-1)), 
-            ('1.0_3_1', IGANN(task='regression', n_estimators=10000, boost_rate=1.0, elm_scale=3, elm_alpha=1))], 
+           [(f'{boost_rate}_{elm_scale}_{elm_alpha}_{init_reg}_{n_hid}', 
+                IGANN(task='regression', n_estimators=10000, boost_rate=boost_rate, elm_scale=elm_scale, elm_alpha=elm_alpha,
+                      init_reg=init_reg, n_hid=n_hid)) for 
+                          boost_rate, elm_scale, elm_alpha, init_reg, n_hid in product(
+                              [0.1, 0.3, 0.5, 0.7, 1.0], [1,2,3,5,10], 
+                              [1e-7,1e-5,1e-3,1e-2,1], [1e-7,1e-5,1e-3,1e-2,1],
+                              [5, 7, 10, 15, 20])],
         }
      
 elif task == "classification":
@@ -308,43 +292,64 @@ if task == 'regression':
     c = 0
     for regression_dataset in regression_dataset_names:
         print(f'{c}: {regression_dataset}')
-        X, y = fetch_data(regression_dataset, return_X_y=True, local_cache_dir='../data/pmlb/regression')
+        X, y = fetch_data(regression_dataset, return_X_y=True, local_cache_dir='data/pmlb/regression')
         if X.shape[1] > 100: # 100
             continue
        
-        if X.shape[0] > 1000: # 100000
+        if X.shape[0] > 100000: # 100000
             continue
 
-        kf = KFold(shuffle=True, random_state=42)
-        
-        fold = 0
-        for train_index, test_index in kf.split(X):
-            scaler = preprocessing.StandardScaler().fit(X[train_index])
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.15, random_state=1)
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.15, random_state=1)
 
-            X_train = scaler.transform(X[train_index])
-            X_test = scaler.transform(X[test_index])
-       
-            scaler = preprocessing.StandardScaler().fit(y[train_index].reshape(-1,1))
-            y_train = scaler.transform(y[train_index].reshape(-1,1))
-            y_test = scaler.transform(y[test_index].reshape(-1,1))
+        scaler = preprocessing.StandardScaler().fit(X_train)
 
-            for para_string, m in model_pool[model]:
-                try:
-                    if model == 'gam':
-                        m = LinearGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
-                    elif model == 'ebm':
-                        m = deepcopy(m)
+        X_train = scaler.transform(X_train)
+        X_val = scaler.transform(X_val)
+        X_test = scaler.transform(X_test)
+
+        scaler = preprocessing.StandardScaler().fit(y_train.reshape(-1,1))
+        y_train = scaler.transform(y_train.reshape(-1,1)).squeeze()
+        y_val = scaler.transform(y_val.reshape(-1,1)).squeeze()
+        y_test = scaler.transform(y_test.reshape(-1,1)).squeeze()
+
+        best_train_score = np.inf
+        best_val_score = np.inf
+        best_test_score = np.inf
+        best_paras = ''
+
+        for para_string, m in model_pool[model]:
+            print(para_string)
+            try:
+                if model == 'lr':
                     m.fit(X_train, y_train)
-       
-                    train_ll = mean_squared_error(y_train, m.predict(X_train))
-                    test_ll = mean_squared_error(y_test, m.predict(X_test))
+                elif model == 'lasso':
+                    m.fit(X_train, y_train)
+                elif model == 'ridge':
+                    m.fit(X_train, y_train)
+                elif model == 'gam':
+                    m = LinearGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
+                    m.fit(X_train, y_train)
+                elif model == 'ebm':
+                    m = deepcopy(m)
+                    m.fit(X_train, y_train)
+                elif model == 'igann':
+                    m.fit(X_train, y_train, val_set=(X_val, y_val))
+
+                val_mse = mean_squared_error(y_val, m.predict(X_val))
+
+                if val_mse < best_val_score:
+                    best_val_score = val_mse
+                    best_train_score = mean_squared_error(y_train, m.predict(X_train))
+                    best_test_score = mean_squared_error(y_test, m.predict(X_test))
+                    best_paras = para_string
+
+            except:
+                continue
             
-                    with open(f'results/{model}_results.csv', 'a') as fd:
-                        fd.write(f'{model};{para_string};{regression_dataset};{fold};{train_ll};{test_ll}\n')
+        with open(f'results/{model}_results.csv', 'a') as fd:
+                fd.write(f'{model};{best_paras};{regression_dataset};{best_train_score};{best_val_score};{best_test_score}\n')
         
-                except:
-                    continue
-            fold += 1
         c += 1
 
 
