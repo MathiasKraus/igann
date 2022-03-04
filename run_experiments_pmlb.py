@@ -356,9 +356,9 @@ elif task == 'classification':
                 else:
                     return -1
 
-        y_train = [map_label(x) for x in y_train]
-        y_val = [map_label(x) for x in y_val]
-        y_test = [map_label(x) for x in y_test]
+        y_train = np.array([map_label(x) for x in y_train])
+        y_val = np.array([map_label(x) for x in y_val])
+        y_test = np.array([map_label(x) for x in y_test])
 
         best_train_score = np.inf
         best_val_score = np.inf
@@ -382,8 +382,7 @@ elif task == 'classification':
                 m = deepcopy(m)
                 m.fit(X_train, y_train)
             elif model == 'igann':
-                # todo: igann error - 'list' object has no attribute 'squeeze'
-                m.fit(X_train, y_train)
+                m.fit(X_train, y_train, val_set=(X_val, y_val))
 
             val_ll = log_loss(y_val, m.predict(X_val))
 
