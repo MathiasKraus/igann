@@ -7,8 +7,7 @@ Created on Thu Feb 10 11:40:52 2022
 """
 
 from sklearn.linear_model import LogisticRegression, Ridge, Lasso, RidgeClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, log_loss
 from sklearn import preprocessing
 from pygam.pygam import LinearGAM, LogisticGAM
@@ -20,11 +19,7 @@ import argparse
 from copy import deepcopy
 from itertools import product
 from functools import partial
-from src.fast_igann_interactions import IGANN
-
-import matplotlib.pyplot as plt
-import seaborn as sb
-
+from fast_igann_interactions import IGANN
 from pmlb import fetch_data, classification_dataset_names, regression_dataset_names
 
 parser = argparse.ArgumentParser()
@@ -34,9 +29,6 @@ parser.add_argument('--model', type=str, required=True)
 args = parser.parse_args()
 task = args.task
 model = args.model
-
-#task = 'classification'
-#model = 'lasso'
 
 if task == 'regression':
     model_pool = {
@@ -156,47 +148,31 @@ elif task == "classification":
              ('25_0.7', partial(terms.s, n_splines=25, lam=0.7)),
              ('25_0.9', partial(terms.s, n_splines=25, lam=0.9))],
         'ebm':
-           [('4_0', ExplainableBoostingClassifier(outer_bags=4, inner_bags=0)),
-            ('8_0', ExplainableBoostingClassifier(outer_bags=8, inner_bags=0)),
-            ('16_0', ExplainableBoostingClassifier(outer_bags=16, inner_bags=0)),
-            ('24_0', ExplainableBoostingClassifier(outer_bags=24, inner_bags=0)),
-           ('4_2', ExplainableBoostingClassifier(outer_bags=4, inner_bags=2)),
-            ('8_2', ExplainableBoostingClassifier(outer_bags=8, inner_bags=2)),
-            ('16_2', ExplainableBoostingClassifier(outer_bags=16, inner_bags=2)),
-            ('24_2', ExplainableBoostingClassifier(outer_bags=24, inner_bags=2)),
-           ('4_4', ExplainableBoostingClassifier(outer_bags=4, inner_bags=4)),
-            ('8_4', ExplainableBoostingClassifier(outer_bags=8, inner_bags=4)),
-            ('16_4', ExplainableBoostingClassifier(outer_bags=16, inner_bags=4)),
-            ('24_4', ExplainableBoostingClassifier(outer_bags=24, inner_bags=4)),
-           ('4_8', ExplainableBoostingClassifier(outer_bags=4, inner_bags=8)),
-            ('8_8', ExplainableBoostingClassifier(outer_bags=8, inner_bags=8)),
-            ('16_8', ExplainableBoostingClassifier(outer_bags=16, inner_bags=8)),
-            ('24_8', ExplainableBoostingClassifier(outer_bags=24, inner_bags=8))],
+           [('4_0', ExplainableBoostingClassifier(outer_bags=4, inner_bags=0, interactions=0)),
+            ('8_0', ExplainableBoostingClassifier(outer_bags=8, inner_bags=0, interactions=0)),
+            ('16_0', ExplainableBoostingClassifier(outer_bags=16, inner_bags=0, interactions=0)),
+            ('24_0', ExplainableBoostingClassifier(outer_bags=24, inner_bags=0, interactions=0)),
+           ('4_2', ExplainableBoostingClassifier(outer_bags=4, inner_bags=2, interactions=0)),
+            ('8_2', ExplainableBoostingClassifier(outer_bags=8, inner_bags=2, interactions=0)),
+            ('16_2', ExplainableBoostingClassifier(outer_bags=16, inner_bags=2, interactions=0)),
+            ('24_2', ExplainableBoostingClassifier(outer_bags=24, inner_bags=2, interactions=0)),
+           ('4_4', ExplainableBoostingClassifier(outer_bags=4, inner_bags=4, interactions=0)),
+            ('8_4', ExplainableBoostingClassifier(outer_bags=8, inner_bags=4, interactions=0)),
+            ('16_4', ExplainableBoostingClassifier(outer_bags=16, inner_bags=4, interactions=0)),
+            ('24_4', ExplainableBoostingClassifier(outer_bags=24, inner_bags=4, interactions=0)),
+           ('4_8', ExplainableBoostingClassifier(outer_bags=4, inner_bags=8, interactions=0)),
+            ('8_8', ExplainableBoostingClassifier(outer_bags=8, inner_bags=8, interactions=0)),
+            ('16_8', ExplainableBoostingClassifier(outer_bags=16, inner_bags=8, interactions=0)),
+            ('24_8', ExplainableBoostingClassifier(outer_bags=24, inner_bags=8, interactions=0))],
         'igann':
-            [('0.1_1_1e-5', IGANN(task='classification', n_estimators=10000, boost_rate=0.1, elm_scale=1, elm_alpha=1e-5)),
-             ('0.1_1_1e-3', IGANN(task='classification', n_estimators=10000, boost_rate=0.1, elm_scale=1, elm_alpha=1e-3)),
-             ('0.1_1_1e-1', IGANN(task='classification', n_estimators=10000, boost_rate=0.1, elm_scale=1, elm_alpha=1e-1)),
-             ('0.1_1_1', IGANN(task='classification', n_estimators=10000, boost_rate=0.1, elm_scale=1, elm_alpha=1)),
-             ('0.1_3_1e-5', IGANN(task='classification', n_estimators=10000, boost_rate=0.1, elm_scale=3, elm_alpha=1e-5)),
-             ('0.1_3_1e-3', IGANN(task='classification', n_estimators=10000, boost_rate=0.1, elm_scale=3, elm_alpha=1e-3)),
-             ('0.1_3_1e-1', IGANN(task='classification', n_estimators=10000, boost_rate=0.1, elm_scale=3, elm_alpha=1e-1)),
-             ('0.1_3_1', IGANN(task='classification', n_estimators=10000, boost_rate=0.1, elm_scale=3, elm_alpha=1)),
-             ('0.5_1_1e-5', IGANN(task='classification', n_estimators=10000, boost_rate=0.5, elm_scale=1, elm_alpha=1e-5)),
-             ('0.5_1_1e-3', IGANN(task='classification', n_estimators=10000, boost_rate=0.5, elm_scale=1, elm_alpha=1e-3)),
-             ('0.5_1_1e-1', IGANN(task='classification', n_estimators=10000, boost_rate=0.5, elm_scale=1, elm_alpha=1e-1)),
-             ('0.5_1_1', IGANN(task='classification', n_estimators=10000, boost_rate=0.5, elm_scale=1, elm_alpha=1)),
-             ('0.5_3_1e-5', IGANN(task='classification', n_estimators=10000, boost_rate=0.5, elm_scale=3, elm_alpha=1e-5)),
-             ('0.5_3_1e-3', IGANN(task='classification', n_estimators=10000, boost_rate=0.5, elm_scale=3, elm_alpha=1e-3)),
-             ('0.5_3_1e-1', IGANN(task='classification', n_estimators=10000, boost_rate=0.5, elm_scale=3, elm_alpha=1e-1)),
-             ('0.5_3_1', IGANN(task='classification', n_estimators=10000, boost_rate=0.5, elm_scale=3, elm_alpha=1)),
-             ('1.0_1_1e-5', IGANN(task='classification', n_estimators=10000, boost_rate=1.0, elm_scale=1, elm_alpha=1e-5)),
-             ('1.0_1_1e-3', IGANN(task='classification', n_estimators=10000, boost_rate=1.0, elm_scale=1, elm_alpha=1e-3)),
-             ('1.0_1_1e-1', IGANN(task='classification', n_estimators=10000, boost_rate=1.0, elm_scale=1, elm_alpha=1e-1)),
-             ('1.0_1_1', IGANN(task='classification', n_estimators=10000, boost_rate=1.0, elm_scale=1, elm_alpha=1)),
-             ('1.0_3_1e-5', IGANN(task='classification', n_estimators=10000, boost_rate=1.0, elm_scale=3, elm_alpha=1e-5)),
-             ('1.0_3_1e-3', IGANN(task='classification', n_estimators=10000, boost_rate=1.0, elm_scale=3, elm_alpha=1e-3)),
-             ('1.0_3_1e-1', IGANN(task='classification', n_estimators=10000, boost_rate=1.0, elm_scale=3, elm_alpha=1e-1)),
-             ('1.0_3_1', IGANN(task='classification', n_estimators=10000, boost_rate=1.0, elm_scale=3, elm_alpha=1))],
+            [(f'{boost_rate}_{elm_scale}_{elm_alpha}_{init_reg}_{n_hid}',
+              IGANN(task='classification', n_estimators=10000, boost_rate=boost_rate, elm_scale=elm_scale,
+                    elm_alpha=elm_alpha,
+                    init_reg=init_reg, n_hid=n_hid)) for
+             boost_rate, elm_scale, elm_alpha, init_reg, n_hid in product(
+                [0.1, 0.3, 0.5, 0.7, 1.0], [1, 2, 3, 5, 10],
+                [1e-7, 1e-5, 1e-3, 1e-2, 1], [1e-7, 1e-5, 1e-3, 1e-2, 1],
+                [5, 7, 10, 15, 20])],
     }
 else:
     raise ValueError
@@ -281,14 +257,15 @@ drop_classification = [
      'glass2',
      'credit_a',
      'cleve',
-     'Hill_Valley_without_noise']
+     'Hill_Valley_without_noise',
+     'postoperative_patient_data',
+     'appendicitis']
 
 regression_dataset_names = [x for x in regression_dataset_names if x not in drop_regression]
 classification_dataset_names = [x for x in classification_dataset_names if x not in drop_classification]
 
 if task == 'regression':
-    df = pd.DataFrame(columns=['dataset', 'fold', 'train_loss', 'test_loss'])
-    
+
     c = 0
     for regression_dataset in regression_dataset_names:
         print(f'{c}: {regression_dataset}')
@@ -343,66 +320,82 @@ if task == 'regression':
                     best_train_score = mean_squared_error(y_train, m.predict(X_train))
                     best_test_score = mean_squared_error(y_test, m.predict(X_test))
                     best_paras = para_string
-
             except:
                 continue
             
         with open(f'results/{model}_results.csv', 'a') as fd:
                 fd.write(f'{model};{best_paras};{regression_dataset};{best_train_score};{best_val_score};{best_test_score}\n')
-        
         c += 1
 
-
 elif task == 'classification':
-    #todo: igann error - 'list' object has no attribute 'squeeze'
-    df = pd.DataFrame(columns=['dataset', 'fold', 'train_loss', 'test_loss'])
 
     c = 0
     for classification_dataset in classification_dataset_names:
         print(f'{c}: {classification_dataset}')
-        X, y = fetch_data(classification_dataset, return_X_y=True, local_cache_dir='../data/pmlb/classification')
-        if X.shape[1] > 100:
+        X, y = fetch_data(classification_dataset, return_X_y=True, local_cache_dir='data/pmlb/classification')
+        if X.shape[1] > 10: # 100
             continue
 
-        if X.shape[0] > 1000: # 100000
+        if X.shape[0] > 100: # 100000
             continue
 
-        kf = KFold(shuffle=True, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.15, random_state=1)
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.15, random_state=1)
 
-        fold = 0
-        for train_index, test_index in kf.split(X):
-            scaler = preprocessing.StandardScaler().fit(X[train_index])
+        scaler = preprocessing.StandardScaler().fit(X_train)
+        X_train = scaler.transform(X_train)
+        X_val = scaler.transform(X_val)
+        X_test = scaler.transform(X_test)
 
-            X_train = scaler.transform(X[train_index])
-            X_test = scaler.transform(X[test_index])
-
-            def map_label(label):
-                if label == 1 or label == 3:
-                    return 1
+        def map_label(label):
+            if label == 1 or label == 3:
+                return 1
+            else:
+                if model == 'gam':
+                    return 0
                 else:
-                    if model == 'gam':
-                        return 0
-                    else:
-                        return -1
+                    return -1
 
-            y_train = [map_label(x) for x in y[train_index]]
-            y_test = [map_label(x) for x in y[test_index]]
+        y_train = [map_label(x) for x in y_train]
+        y_val = [map_label(x) for x in y_val]
+        y_test = [map_label(x) for x in y_test]
 
-            for para_string, m in model_pool[model]:
-                # try:
-                    if model == 'gam':
-                        # todo: RuntimeWarning: invalid value encountered in true_divide
-                        m = LogisticGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
-                    elif model == 'ebm':
-                        m = deepcopy(m)
-                    m.fit(X_train, y_train)
+        best_train_score = np.inf
+        best_val_score = np.inf
+        best_test_score = np.inf
+        best_paras = ''
 
-                    train_ll = log_loss(y_train, m.predict(X_train))
-                    test_ll = log_loss(y_test, m.predict(X_test))
+        for para_string, m in model_pool[model]:
+            # try:
+            if model == 'log':
+                m.fit(X_train, y_train)
+            elif model == 'ridge':
+                m.fit(X_train, y_train)
+            elif model == 'gam':
+                '''
+                Note: LogisticGAM from the 'pyGAM' package does not converge sometimes and raises the error: 
+                'pygam.utils.OptimizationError: PIRLS optimization has diverged.'
+                '''
+                m = LogisticGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
+                m.fit(X_train, y_train)
+            elif model == 'ebm':
+                m = deepcopy(m)
+                m.fit(X_train, y_train)
+            elif model == 'igann':
+                # todo: igann error - 'list' object has no attribute 'squeeze'
+                m.fit(X_train, y_train)
 
-                    with open(f'results/{model}_results.csv', 'a') as fd:
-                        fd.write(f'{model};{para_string};{classification_dataset};{fold};{train_ll};{test_ll}\n')
-                # except:
-                #    continue
-            fold += 1
+            val_ll = log_loss(y_val, m.predict(X_val))
+
+            if val_ll < best_val_score:
+                best_val_score = val_ll
+                best_train_score = log_loss(y_train, m.predict(X_train))
+                best_test_score = log_loss(y_test, m.predict(X_test))
+                best_paras = para_string
+            # except:
+            #     continue
+
+        with open(f'results/{model}_results.csv', 'a') as fd:
+            fd.write(f'{model};{best_paras};{classification_dataset};{best_train_score};{best_val_score};{best_test_score}\n')
+
         c += 1
