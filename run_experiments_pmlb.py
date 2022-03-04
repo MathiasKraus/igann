@@ -333,10 +333,10 @@ elif task == 'classification':
     for classification_dataset in classification_dataset_names:
         print(f'{c}: {classification_dataset}')
         X, y = fetch_data(classification_dataset, return_X_y=True, local_cache_dir='data/pmlb/classification')
-        if X.shape[1] > 10: # 100
+        if X.shape[1] > 100: # 100
             continue
 
-        if X.shape[0] > 100: # 100000
+        if X.shape[0] > 100000: # 100000
             continue
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.15, random_state=1)
@@ -366,33 +366,33 @@ elif task == 'classification':
         best_paras = ''
 
         for para_string, m in model_pool[model]:
-            # try:
-            if model == 'log':
-                m.fit(X_train, y_train)
-            elif model == 'ridge':
-                m.fit(X_train, y_train)
-            elif model == 'gam':
-                '''
-                Note: LogisticGAM from the 'pyGAM' package does not converge sometimes and raises the error: 
-                'pygam.utils.OptimizationError: PIRLS optimization has diverged.'
-                '''
-                m = LogisticGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
-                m.fit(X_train, y_train)
-            elif model == 'ebm':
-                m = deepcopy(m)
-                m.fit(X_train, y_train)
-            elif model == 'igann':
-                m.fit(X_train, y_train, val_set=(X_val, y_val))
+            try:
+                if model == 'log':
+                    m.fit(X_train, y_train)
+                elif model == 'ridge':
+                    m.fit(X_train, y_train)
+                elif model == 'gam':
+                    '''
+                    Note: LogisticGAM from the 'pyGAM' package does not converge sometimes and raises the error: 
+                    'pygam.utils.OptimizationError: PIRLS optimization has diverged.'
+                    '''
+                    m = LogisticGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
+                    m.fit(X_train, y_train)
+                elif model == 'ebm':
+                    m = deepcopy(m)
+                    m.fit(X_train, y_train)
+                elif model == 'igann':
+                    m.fit(X_train, y_train, val_set=(X_val, y_val))
 
-            val_ll = log_loss(y_val, m.predict(X_val))
+                val_ll = log_loss(y_val, m.predict(X_val))
 
-            if val_ll < best_val_score:
-                best_val_score = val_ll
-                best_train_score = log_loss(y_train, m.predict(X_train))
-                best_test_score = log_loss(y_test, m.predict(X_test))
-                best_paras = para_string
-            # except:
-            #     continue
+                if val_ll < best_val_score:
+                    best_val_score = val_ll
+                    best_train_score = log_loss(y_train, m.predict(X_train))
+                    best_test_score = log_loss(y_test, m.predict(X_test))
+                    best_paras = para_string
+            except:
+                continue
 
         with open(f'results/{model}_results.csv', 'a') as fd:
             fd.write(f'{model};{best_paras};{classification_dataset};{best_train_score};{best_val_score};{best_test_score}\n')
