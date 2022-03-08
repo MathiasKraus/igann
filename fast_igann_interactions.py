@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from scipy import linalg
 import matplotlib.pyplot as plt
 
-@njit
+@njit(parallel=True)
 def act(x):
     return (np.exp(x) - 1) * (x <= 0) + x*(x > 0)
 
@@ -109,14 +109,7 @@ class ELM_Regressor():
         X_hid = np.dot(X, self.hidden_mat)
         X_hid = act(X_hid)
         
-        # X_hid = np.zeros((X.shape[0], (X.shape[1] + len(self.feat_pairs)) * self.n_hid))
-        # for i in range(X.shape[1]):
-            # x_in = np.expand_dims(X[:, i], 1)
-            # x_in = np.dot(x_in, self.hidden_list[i])
-            # x_in = act(x_in)
-            # X_hid[:, i * self.n_hid:(i + 1) * self.n_hid] = x_in
-        
-        starting_index = X.shape[1] * self.n_hid
+        X_hid_interactions = np.zeros((X.shape[0], len(self.feat_pairs) * self.n_hid))
             
         for c, (i, j) in enumerate(self.feat_pairs):
             x_in = np.expand_dims(X[:, i], 1)
@@ -124,7 +117,9 @@ class ELM_Regressor():
             x_jn = np.expand_dims(X[:, j], 1)
             x_jn = np.dot(x_jn, self.hidden_list_inter[c][1])
             
-            X_hid[:, starting_index + c * self.n_hid : starting_index + (c + 1) * self.n_hid] = act(x_in + x_jn)
+            X_hid_interactions[:, c * self.n_hid : (c + 1) * self.n_hid] = act(x_in + x_jn)
+        
+        X_hid = np.hstack([X_hid, X_hid_interactions])
         
         return X_hid
 
@@ -188,10 +183,6 @@ class ELM_Regressor():
         X_hid = self.get_hidden_values(X)
         X_hid_mult = X_hid*mult_coef
         # Fit the ridge regression on the hidden values.
-        # m = Ridge(alpha=self.elm_alpha, tol=0.01, fit_intercept=False)
-        # TODO: Intercept?
-        # with sklearn.config_context(assume_finite=True):
-            # m.fit(X_hid_mult, y)
         m = Cholesky_Ridge(alpha=self.elm_alpha)
         m.fit(X_hid_mult, y)
         self.output_model = m
