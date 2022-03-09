@@ -30,6 +30,8 @@ args = parser.parse_args()
 task = args.task
 model = args.model
 
+skip_until = '210_cloud'
+
 if task == 'regression':
     model_pool = {
         'lasso':
@@ -266,9 +268,20 @@ classification_dataset_names = [x for x in classification_dataset_names if x not
 
 if task == 'regression':
 
+    skip = True
     c = 0
     for regression_dataset in regression_dataset_names:
         print(f'{c}: {regression_dataset}')
+
+        if regression_dataset == skip_until:
+            print('found skipping dataset')
+            skip = False
+            continue
+ 
+        if skip:
+            continue
+
+
         X, y = fetch_data(regression_dataset, return_X_y=True, local_cache_dir='data/pmlb/regression')
         if X.shape[1] > 100: # 100
             continue
@@ -320,6 +333,10 @@ if task == 'regression':
                     best_train_score = mean_squared_error(y_train, m.predict(X_train))
                     best_test_score = mean_squared_error(y_test, m.predict(X_test))
                     best_paras = para_string
+
+                if model == 'igann':
+                    m._reset_state()
+
             except:
                 continue
             
