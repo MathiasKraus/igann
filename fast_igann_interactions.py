@@ -109,7 +109,14 @@ class ELM_Regressor():
         X_hid = np.dot(X, self.hidden_mat)
         X_hid = act(X_hid)
         
-        X_hid_interactions = np.zeros((X.shape[0], len(self.feat_pairs) * self.n_hid))
+        # X_hid = np.zeros((X.shape[0], (X.shape[1] + len(self.feat_pairs)) * self.n_hid))
+        # for i in range(X.shape[1]):
+            # x_in = np.expand_dims(X[:, i], 1)
+            # x_in = np.dot(x_in, self.hidden_list[i])
+            # x_in = act(x_in)
+            # X_hid[:, i * self.n_hid:(i + 1) * self.n_hid] = x_in
+        
+        starting_index = X.shape[1] * self.n_hid
             
         for c, (i, j) in enumerate(self.feat_pairs):
             x_in = np.expand_dims(X[:, i], 1)
@@ -117,9 +124,7 @@ class ELM_Regressor():
             x_jn = np.expand_dims(X[:, j], 1)
             x_jn = np.dot(x_jn, self.hidden_list_inter[c][1])
             
-            X_hid_interactions[:, c * self.n_hid : (c + 1) * self.n_hid] = act(x_in + x_jn)
-        
-        X_hid = np.hstack([X_hid, X_hid_interactions])
+            X_hid[:, starting_index + c * self.n_hid : starting_index + (c + 1) * self.n_hid] = act(x_in + x_jn)
         
         return X_hid
 
@@ -183,6 +188,10 @@ class ELM_Regressor():
         X_hid = self.get_hidden_values(X)
         X_hid_mult = X_hid*mult_coef
         # Fit the ridge regression on the hidden values.
+        # m = Ridge(alpha=self.elm_alpha, tol=0.01, fit_intercept=False)
+        # TODO: Intercept?
+        # with sklearn.config_context(assume_finite=True):
+            # m.fit(X_hid_mult, y)
         m = Cholesky_Ridge(alpha=self.elm_alpha)
         m.fit(X_hid_mult, y)
         self.output_model = m
@@ -254,7 +263,14 @@ class IGANN:
             self.init_classifier = Lasso(alpha=self.init_reg)
         else:
             print('Task not implemented. Can be classification or regression')
-    
+  
+    def _clip_p(self, p):
+        if np.max(p) > 100 or np.min(p) < -100:
+            print('Cutting prediction to [-100, 100]. Consider higher regularization elm_alpha')
+            return np.clip(p, -100, 100)
+        else:
+            return p
+
     def _loss_sqrt_hessian(self, y, p):
         '''
         This function computes the square root of the hessians of the log loss or the mean squared error.
@@ -442,7 +458,6 @@ class IGANN:
         
         # Sequentially fit one ELM after the other. Max number is stored in self.n_estimators.
         for counter in range(self.n_estimators):
-            
             hessian_train_sqrt=self._loss_sqrt_hessian(y, y_hat)
             y_tilde=np.sqrt(0.5)*self._get_y_tilde(y,y_hat)
 
@@ -463,6 +478,9 @@ class IGANN:
             # Update the prediction for training and validation data
             y_hat += self.boost_rate * train_regressor_pred
             y_hat_val += self.boost_rate * val_regressor_pred
+            
+            y_hat = self._clip_p(y_hat)
+            y_hat_val = self._clip_p(y_hat_val)
             
             if self.task == 'classification':
                 val_pred_prob = 1 / (1 + np.exp(-y_hat_val))
@@ -681,6 +699,7 @@ class IGANN:
         probability of class 1.
         '''
         pred = self.predict(X)
+        pred = self._clip_p(pred)
         pred = 1 / (1 + np.exp(-pred))
 
         ret = np.zeros((len(X), 2), dtype=float)
