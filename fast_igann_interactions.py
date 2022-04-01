@@ -754,11 +754,13 @@ class IGANN:
             
         return feature_effects
 
-    def plot_single(self, plot_by_list=None, show_n=5):
+    def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None):
         '''
-        This function plots the most important shape functions. 
+        This function plots the most important shape functions.
         Parameters:
         show_n: the number of shape functions that should be plotted (don't know if this works).
+        scaler_dict: dictionary that maps every numerical feature to the respective (sklearn) scaler.
+                     scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not None
         '''
         feature_effects = self.get_shape_functions_as_dict()
         if plot_by_list is None:
@@ -787,6 +789,8 @@ class IGANN:
         for d in top_k:
             if plot_by_list is not None and d['name'] not in plot_by_list:
                 continue
+            if scaler_dict:
+                d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
             if len(d['x']) < 4:
                 if create_figure:
                     if show_n == 1:
