@@ -889,11 +889,16 @@ class IGANN:
         plt.show()
             
 
-    def plot_interactions(self, create_figure=True):
+    def plot_interactions(self, create_figure=True, scaler_dict=None):
+        """
+        create_figure:
+        scaler_dict: dictionary that maps every numerical feature to the respective (sklearn) scaler.
+                     scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not Non
+        """
         if create_figure:
             plt.close(fig="Interactions")
-            self.fig_inter, self.axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(14, 10), num="Interactions")
-            plt.subplots_adjust(wspace=0.4)
+            self.fig_inter, self.axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(int(6 * len(self.feat_pairs)), 4), num="Interactions") #1,
+            plt.subplots_adjust(wspace=0.2)
             self.plot_objects_inter=[]
         else:
             plot_object_counter = 0
@@ -906,29 +911,38 @@ class IGANN:
                 x1_stat = x1[v] * np.ones(len(x2))
                 for regressor, boost_rate in zip(self.regressors, 
                                                  self.boosting_rates):
-                    pred[v,:] += boost_rate * regressor.predict_single_inter(x1_stat, x2, i).squeeze()
-            
+                    pred[v, :] += boost_rate * regressor.predict_single_inter(x1_stat, x2, i).squeeze()
+
+            if scaler_dict:
+                x1 = scaler_dict[self.feature_names[fp[0]]].inverse_transform(x1.reshape(-1, 1)).squeeze()
+                x2 = scaler_dict[self.feature_names[fp[1]]].inverse_transform(x2.reshape(-1, 1)).squeeze()
+
             if create_figure:
-                if len(self.feat_pairs)==1:
+                if len(self.feat_pairs) == 1:
                     plot_object = self.axs_inter.pcolormesh(x1, x2, pred, shading='nearest')
+                    self.fig_inter.colorbar(plot_object, ax=self.axs_inter)
                     #self.axs_inter.set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[0][0]],
                     #                                                      self.feature_names[self.feat_pairs[0][1]]))
-                    self.axs_inter.set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
+                    self.axs_inter.set_title('Min: {:.2f}, Max: {:.2f}'.format(np.min(pred), np.max(pred)))
                     self.axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
                     self.axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
                     
-                    self.axs_inter.set_aspect('equal', 'box')
+                    # self.axs_inter.set_aspect('equal', 'box')
+                    self.axs_inter.set_aspect('auto', 'box')
                     self.plot_objects_inter.append(plot_object)
+                    self.fig_inter.tight_layout()
                     plt.show()
                 else:
                     plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='nearest')
                     #self.axs_inter[i].set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[i][0]],
                     #                                                      self.feature_names[self.feat_pairs[i][1]]))
-                    self.axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f})'.format(np.min(pred), np.max(pred)))
+                    self.fig_inter.colorbar(plot_object, ax=self.axs_inter[i])
+                    self.axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f}'.format(np.min(pred), np.max(pred)))
                     self.axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
                     self.axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
                     
-                    self.axs_inter[i].set_aspect('equal', 'box')
+                    # self.axs_inter[i].set_aspect('equal', 'box')
+                    self.axs_inter[i].set_aspect('auto', 'box')
                     self.plot_objects_inter.append(plot_object)
                     
             else:
@@ -937,6 +951,7 @@ class IGANN:
                 plot_object.set_array(pred)
                 self.fig_inter.canvas.draw()
                 self.fig_inter.canvas.flush_events()
+        self.fig_inter.tight_layout()
         plt.show()
 
     def plot_interactions_plus_single(self, create_figure=True):
@@ -1028,9 +1043,6 @@ if __name__ == '__main__':
     
     m = IGANN(task='regression', n_estimators=3, n_hid=5, boost_rate=0.3, interactions=0, verbose=2)
     m.fit(inputs, targets.squeeze())
-    
-    aaa
-    
     
     from sklearn.datasets import make_circles
     import seaborn as sns
