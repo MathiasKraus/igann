@@ -6,9 +6,6 @@ import matplotlib.pyplot as plt
 import time
 import torch
 
-def mean_squared_error(y_true, y_pred):
-    return ((y_true - y_pred)**2).mean()
-
 class Cholesky_Ridge():
     def __init__(self, alpha, device):
         self.coef_ = None
