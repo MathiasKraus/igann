@@ -35,18 +35,15 @@ class ELM_Regressor():
         - n_input: number of inputs/features for your task (shape[1] of your X matrix)
         - n_hid: number of hidden neurons for each feature. Multiply this number with n_input
         to get the number of parameters this model has (-1 because of the bias term)
-        - feat_pairs: TODO
+        - feat_pairs: List of feature pairs that should be used in the regressor.
         - seed: This number sets the seed for generating the random weights. It should
         be different for each regressor
         - scale: the scale which is used to initialize the weights in the first layer of the 
-        model. These weights are not changed throughout the optimization. This parameter
-        has huge impact on the model. A larger scale makes the shape functions sharper, a lower
-        scale makes them smoother. Definitely play around with this one.
+        model. These weights are not changed throughout the optimization.
         - scale_inter: scale of the interaction ELMs
-        - elm_alpha: the regularization of the ridge regression. I didn't find this to have
-        a huge impact, but let's try it out...
-        - act: the activation function in the model. I mainly used 'elu' which works well,
-        'relu' is kind of a mess, 'gelu' also provides nice results.
+        - elm_alpha: the regularization of the ridge regression.
+        - act: the activation function in the model. can be 'elu', 'relu' or a torch activation function.
+        - device: the device on which the regressor should train. can be 'cpu' or 'cuda'.
         '''
         super().__init__()
         np.random.seed(seed)
