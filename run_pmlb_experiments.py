@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Feb 10 11:40:52 2022
-
-@author: makraus
-"""
-
 from sklearn.linear_model import LogisticRegression, Ridge, Lasso, RidgeClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, log_loss
@@ -19,8 +11,10 @@ import argparse
 from copy import deepcopy
 from itertools import product
 from functools import partial
-from fast_igann_interactions import IGANN
+from igann_torch_cpu import IGANN
 from pmlb import fetch_data, classification_dataset_names, regression_dataset_names
+import time
+import torch
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--task', type=str, required=True)
@@ -29,8 +23,6 @@ parser.add_argument('--model', type=str, required=True)
 args = parser.parse_args()
 task = args.task
 model = args.model
-
-skip_until = '210_cloud'
 
 if task == 'regression':
     model_pool = {
@@ -106,17 +98,17 @@ if task == 'regression':
      
 elif task == "classification":
     model_pool = {
-        'log':
-            [('1e-5', LogisticRegression(C=1e-5, max_iter=10000)),
-             ('1e-4', LogisticRegression(C=1e-4, max_iter=10000)),
-             ('1e-3', LogisticRegression(C=1e-3, max_iter=10000)),
-             ('1e-2', LogisticRegression(C=1e-2, max_iter=10000)),
-             ('1e-1', LogisticRegression(C=1e-1, max_iter=10000)),
-             ('1e0', LogisticRegression(C=1e0, max_iter=10000)),
-             ('1e1', LogisticRegression(C=1e1, max_iter=10000)),
-             ('1e2', LogisticRegression(C=1e2, max_iter=10000)),
-             ('1e3', LogisticRegression(C=1e3, max_iter=10000)),
-             ('1e4', LogisticRegression(C=1e4, max_iter=10000))],
+        'lasso':
+            [('1e-5', LogisticRegression(C=1e-5, penalty='l1', solver='liblinear')),
+             ('1e-4', LogisticRegression(C=1e-4, penalty='l1', solver='liblinear')),
+             ('1e-3', LogisticRegression(C=1e-3, penalty='l1', solver='liblinear')),
+             ('1e-2', LogisticRegression(C=1e-2, penalty='l1', solver='liblinear')),
+             ('1e-1', LogisticRegression(C=1e-1, penalty='l1', solver='liblinear')),
+             ('1e0', LogisticRegression(C=1e0, penalty='l1', solver='liblinear')),
+             ('1e1', LogisticRegression(C=1e1, penalty='l1', solver='liblinear')),
+             ('1e2', LogisticRegression(C=1e2, penalty='l1', solver='liblinear')),
+             ('1e3', LogisticRegression(C=1e3, penalty='l1', solver='liblinear')),
+             ('1e4', LogisticRegression(C=1e4, penalty='l1', solver='liblinear'))],
         'ridge':
            [('1e-5', RidgeClassifier(alpha=1e-5)),
             ('1e-4', RidgeClassifier(alpha=1e-4)),
@@ -267,28 +259,17 @@ regression_dataset_names = [x for x in regression_dataset_names if x not in drop
 classification_dataset_names = [x for x in classification_dataset_names if x not in drop_classification]
 
 if task == 'regression':
-
-    skip = True
     c = 0
     for regression_dataset in regression_dataset_names:
         print(f'{c}: {regression_dataset}')
-
-        if regression_dataset == skip_until:
-            print('found skipping dataset')
-            skip = False
-            continue
- 
-        if skip:
-            continue
-
-
+        
         X, y = fetch_data(regression_dataset, return_X_y=True, local_cache_dir='data/pmlb/regression')
-        if X.shape[1] > 100: # 100
+        if X.shape[0] > 100000:
             continue
-       
-        if X.shape[0] > 100000: # 100000
+        
+        if X.shape[1] > 50:
             continue
-
+        
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.15, random_state=1)
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.15, random_state=1)
 
@@ -303,14 +284,25 @@ if task == 'regression':
         y_val = scaler.transform(y_val.reshape(-1,1)).squeeze()
         y_test = scaler.transform(y_test.reshape(-1,1)).squeeze()
 
+        if model == 'igann':
+            X_train = torch.from_numpy(X_train.astype(np.float32))
+            y_train = torch.from_numpy(y_train.astype(np.float32))
+            X_val = torch.from_numpy(X_val.astype(np.float32))
+            y_val = torch.from_numpy(y_val.astype(np.float32))
+            X_test = torch.from_numpy(X_test.astype(np.float32))
+            y_test = torch.from_numpy(y_test.astype(np.float32))
+
         best_train_score = np.inf
         best_val_score = np.inf
         best_test_score = np.inf
         best_paras = ''
-
+        
         for para_string, m in model_pool[model]:
             print(para_string)
             try:
+                if model == 'ebm':
+                    m = deepcopy(m)
+                start = time.time()
                 if model == 'lr':
                     m.fit(X_train, y_train)
                 elif model == 'lasso':
@@ -321,11 +313,11 @@ if task == 'regression':
                     m = LinearGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
                     m.fit(X_train, y_train)
                 elif model == 'ebm':
-                    m = deepcopy(m)
                     m.fit(X_train, y_train)
                 elif model == 'igann':
-                    m.fit(X_train, y_train, val_set=(X_val, y_val))
-
+                    m.fit(X_train, y_train)
+                end = time.time()
+                
                 val_mse = mean_squared_error(y_val, m.predict(X_val))
 
                 if val_mse < best_val_score:
@@ -333,6 +325,7 @@ if task == 'regression':
                     best_train_score = mean_squared_error(y_train, m.predict(X_train))
                     best_test_score = mean_squared_error(y_test, m.predict(X_test))
                     best_paras = para_string
+                    training_time = end - start
 
                 if model == 'igann':
                     m._reset_state()
@@ -341,7 +334,7 @@ if task == 'regression':
                 continue
             
         with open(f'results/{model}_results.csv', 'a') as fd:
-                fd.write(f'{model};{best_paras};{regression_dataset};{best_train_score};{best_val_score};{best_test_score}\n')
+                fd.write(f'{model};{best_paras};{regression_dataset};{best_train_score};{best_val_score};{best_test_score};{training_time}\n')
         c += 1
 
 elif task == 'classification':
@@ -350,10 +343,16 @@ elif task == 'classification':
     for classification_dataset in classification_dataset_names:
         print(f'{c}: {classification_dataset}')
         X, y = fetch_data(classification_dataset, return_X_y=True, local_cache_dir='data/pmlb/classification')
-        if X.shape[1] > 100: # 100
+        if X.shape[1] > 100:
             continue
 
-        if X.shape[0] > 100000: # 100000
+        if X.shape[0] > 100000:
+            continue
+
+        if X.shape[1] > 50:
+            continue
+        
+        if len(np.unique(y)) != 2 or any(np.unique(y) != np.array([0,1])):
             continue
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.15, random_state=1)
@@ -363,9 +362,9 @@ elif task == 'classification':
         X_train = scaler.transform(X_train)
         X_val = scaler.transform(X_val)
         X_test = scaler.transform(X_test)
-
+    
         def map_label(label):
-            if label == 1 or label == 3:
+            if label == 1:
                 return 1
             else:
                 if model == 'gam':
@@ -377,14 +376,26 @@ elif task == 'classification':
         y_val = np.array([map_label(x) for x in y_val])
         y_test = np.array([map_label(x) for x in y_test])
 
+        if model == 'igann':
+            X_train = torch.from_numpy(X_train.astype(np.float32))
+            y_train = torch.from_numpy(y_train.astype(np.float32))
+            X_val = torch.from_numpy(X_val.astype(np.float32))
+            y_val = torch.from_numpy(y_val.astype(np.float32))
+            X_test = torch.from_numpy(X_test.astype(np.float32))
+            y_test = torch.from_numpy(y_test.astype(np.float32))
+
         best_train_score = np.inf
         best_val_score = np.inf
         best_test_score = np.inf
         best_paras = ''
 
         for para_string, m in model_pool[model]:
+            print(para_string)
             try:
-                if model == 'log':
+                if model == 'ebm':
+                    m = deepcopy(m)
+                start = time.time()
+                if model == 'lasso':
                     m.fit(X_train, y_train)
                 elif model == 'ridge':
                     m.fit(X_train, y_train)
@@ -396,10 +407,10 @@ elif task == 'classification':
                     m = LogisticGAM(terms.TermList(*[m(i) for i in range(X.shape[1])]))
                     m.fit(X_train, y_train)
                 elif model == 'ebm':
-                    m = deepcopy(m)
                     m.fit(X_train, y_train)
                 elif model == 'igann':
-                    m.fit(X_train, y_train, val_set=(X_val, y_val))
+                    m.fit(X_train, y_train)
+                end = time.time()
 
                 val_ll = log_loss(y_val, m.predict(X_val))
 
@@ -408,10 +419,14 @@ elif task == 'classification':
                     best_train_score = log_loss(y_train, m.predict(X_train))
                     best_test_score = log_loss(y_test, m.predict(X_test))
                     best_paras = para_string
+                    training_time = end - start
+            
+                if model == 'igann':
+                    m._reset_state()
+
             except:
                 continue
 
-        with open(f'results/{model}_results.csv', 'a') as fd:
-            fd.write(f'{model};{best_paras};{classification_dataset};{best_train_score};{best_val_score};{best_test_score}\n')
-
+        with open(f'results/{model}_results_classification.csv', 'a') as fd:
+                fd.write(f'{model};{best_paras};{classification_dataset};{best_train_score};{best_val_score};{best_test_score};{training_time}\n')
         c += 1
