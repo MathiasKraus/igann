@@ -7,10 +7,10 @@ from igann import IGANN
 np.random.seed(0)
 
 
-X = torch.from_numpy(np.random.rand(1000000, 10).astype(np.float32))
+X = torch.from_numpy(np.random.rand(1000000, 20).astype(np.float32))
 y = torch.from_numpy(np.random.rand(1000000).astype(np.float32))
 
-n_samples = [1000, 5000, 10000, 50000, 100000, 500000, 1000000]
+n_samples = [1000, 2500, 5000, 7500, 10000, 25000, 50000, 75000, 100000, 250000, 500000, 750000, 1000000]
 cpu_times = []
 gpu_times = []
 
@@ -30,21 +30,26 @@ for n in n_samples:
   end = time.time()
   gpu_times.append(end - start)
 
-plt.plot(np.log10(n_samples), cpu_times, label="cpu")
-plt.plot(np.log10(n_samples), gpu_times, label="gpu")
-plt.xlabel('Number of samples')
-plt.ylabel('Training time (sec)')
-plt.xticks(np.log10(n_samples), ["1e3", "5e3", "1e4", "5e4", "1e5", "5e5", "1e6"])
-plt.legend()
-plt.show()
+print('CPU')
+print(cpu_times)
 
+print('GPU')
+print(gpu_times)
+
+#plt.plot(np.log10(n_samples), cpu_times, label="cpu")
+#plt.plot(np.log10(n_samples), gpu_times, label="gpu")
+#plt.xlabel('Number of samples')
+#plt.ylabel('Training time (sec)')
+#plt.xticks(np.log10(n_samples), ["1e3", "5e3", "1e4", "5e4", "1e5", "5e5", "1e6"])
+#plt.legend()
+#plt.show()
 
 
 np.random.seed(0)
 X = torch.from_numpy(np.random.rand(100000, 100).astype(np.float32))
 y = torch.from_numpy(np.random.rand(100000).astype(np.float32))
 
-n_features = [2, 5, 10, 25, 50]
+n_features = [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 cpu_times = []
 gpu_times = []
 
@@ -64,9 +69,15 @@ for n in n_features:
   end = time.time()
   gpu_times.append(end - start)
 
-plt.plot(n_features, cpu_times, label="cpu")
-plt.plot(n_features, gpu_times, label="gpu")
-plt.xlabel('Number of features')
-plt.ylabel('Training time (sec)')
-plt.legend()
-plt.show()
+print('CPU')
+print(cpu_times)
+
+print('GPU')
+print(gpu_times)
+
+#plt.plot(n_features, cpu_times, label="cpu")
+#plt.plot(n_features, gpu_times, label="gpu")
+#plt.xlabel('Number of features')
+#plt.ylabel('Training time (sec)')
+#plt.legend()
+#plt.show()
