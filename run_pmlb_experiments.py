@@ -11,7 +11,7 @@ import argparse
 from copy import deepcopy
 from itertools import product
 from functools import partial
-from igann_torch_cpu import IGANN
+from igann import IGANN
 from pmlb import fetch_data, classification_dataset_names, regression_dataset_names
 import time
 import torch
@@ -412,12 +412,12 @@ elif task == 'classification':
                     m.fit(X_train, y_train)
                 end = time.time()
 
-                val_ll = log_loss(y_val, m.predict(X_val))
+                val_ll = log_loss(y_val, m.predict_proba(X_val))
 
                 if val_ll < best_val_score:
                     best_val_score = val_ll
-                    best_train_score = log_loss(y_train, m.predict(X_train))
-                    best_test_score = log_loss(y_test, m.predict(X_test))
+                    best_train_score = log_loss(y_train, m.predict_proba(X_train))
+                    best_test_score = log_loss(y_test, m.predict_proba(X_test))
                     best_paras = para_string
                     training_time = end - start
             
