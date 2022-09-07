@@ -1,10 +1,11 @@
+import time
+import torch
+import warnings
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression, Lasso
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-import time
-import torch
 
 class Cholesky_Ridge():
     def __init__(self, alpha, device):
@@ -229,7 +230,7 @@ class IGANN:
 
     def _clip_p(self, p):
         if torch.max(p) > 100 or torch.min(p) < -100:
-            print('Cutting prediction to [-100, 100]. Consider higher regularization elm_alpha')
+            warnings.warn('Cutting prediction to [-100, 100]. Consider higher regularization elm_alpha')
             return torch.clip(p, -100, 100)
         else:
             return p
@@ -515,8 +516,8 @@ class IGANN:
                 alpha = (lower_bound+upper_bound)/2
 
         if not found:
-            print('Did not find wanted number of features!!!!')
-            print(f'Using {features}')
+            warnings.warn('Did not find wanted number of features!!!!')
+            warnings.warn(f'Using {features}')
 
         else:
             if self.verbose > 0:
@@ -565,8 +566,8 @@ class IGANN:
                 alpha = (lower_bound+upper_bound)/2
 
         if not found:
-            print('Did not find wanted number of interactions!!!!')
-            print(f'Using interactions {feat_pairs}')
+            warnings.warn('Did not find wanted number of interactions!!!!')
+            warnings.warn(f'Using interactions {feat_pairs}')
 
         else:
             if self.verbose > 0:
