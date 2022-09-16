@@ -48,6 +48,7 @@ class ELM_Regressor():
         '''
         super().__init__()
         np.random.seed(seed)
+        torch.manual_seed(seed)
         # The following are the random weights in the model which are not optimized. 
         self.hidden_list = torch.normal(mean=torch.zeros(n_input, n_input * n_hid), std=scale).to(device)
 
@@ -920,6 +921,9 @@ if __name__ == '__main__':
 
     inputs = df[['x1', 'x2']]
     targets = df.label
+    
+    inputs = torch.from_numpy(inputs.values.astype(np.float32))
+    targets = torch.from_numpy(targets.values.astype(np.float32))
 
     m.fit(inputs, targets)
     end = time.time()
