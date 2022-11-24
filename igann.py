@@ -7,7 +7,7 @@ from sklearn.linear_model import LogisticRegression, Lasso
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
-class Cholesky_Ridge():
+class torch_Ridge():
     def __init__(self, alpha, device):
         self.coef_ = None
         self.alpha = alpha
@@ -152,7 +152,7 @@ class ELM_Regressor():
         X_hid = self.get_hidden_values(X)
         X_hid_mult = X_hid*mult_coef
         # Fit the ridge regression on the hidden values.
-        m = Cholesky_Ridge(alpha=self.elm_alpha, device=self.device)
+        m = torch_Ridge(alpha=self.elm_alpha, device=self.device)
         m.fit(X_hid_mult, y)
         self.output_model = m
         return X_hid
