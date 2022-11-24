@@ -379,7 +379,7 @@ class IGANN:
                 else:
                     self.feat_pairs = feat_pairs
             else:
-                self.feat_pairs = self._find_interactions(X, y_tilde, 1/torch.sqrt(torch.tensor(0.5)) * hessian_train_sqrt[:,None])
+                self.feat_pairs = self._find_interactions(X, y_tilde, torch.sqrt(torch.tensor(0.5)) * hessian_train_sqrt[:,None])
 
         X, y, y_hat, X_val, y_val, y_hat_val = X.to(self.device), y.to(self.device), y_hat.to(self.device), X_val.to(self.device), y_val.to(self.device), y_hat_val.to(self.device)
 
