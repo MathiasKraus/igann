@@ -21,26 +21,22 @@ class Cholesky_Ridge():
 
 class ELM_Regressor():
     '''
-    This class represents one single hidden neural network for a regression task.
-    Trainable parameters are only the parameters from the last layer, the other 
-    parameters stay random. This is mostly to speed up training and to partially
-    prevent overfitting. The name of this model is called 'extreme learning
-    machine'. 
-    For fitting, the model then only has to optimize a linear regression (Ridge in
-    our case).
-    See wikipedia and google for more details .
+    This class represents one single hidden layer neural network for a regression task.
+    Trainable parameters are only the parameters from the output layer. The parameters
+    of the hidden layer are sampled from a normal distribution. This increases the training
+    performance significantly as it reduces the training task to a regularized linear
+    regression (Ridge Regression), see "Extreme Learning Machines" for more details.
     '''
     def __init__(self, n_input, n_hid, feat_pairs, seed=0, scale=10, scale_inter=1, elm_alpha=0.0001, act='elu', device='cpu'):
         '''
         Input parameters:
-        - n_input: number of inputs/features for your task (shape[1] of your X matrix)
-        - n_hid: number of hidden neurons for each feature. Multiply this number with n_input
-        to get the number of parameters this model has (-1 because of the bias term)
+        - n_input: number of inputs/features (should be X.shape[1])
+        - n_hid: number of hidden neurons for the base functions
         - feat_pairs: List of feature pairs that should be used in the regressor.
         - seed: This number sets the seed for generating the random weights. It should
-        be different for each regressor
-        - scale: the scale which is used to initialize the weights in the first layer of the 
-        model. These weights are not changed throughout the optimization.
+                be different for each regressor
+        - scale: the scale which is used to initialize the weights in the hidden layer of the 
+                 model. These weights are not changed throughout the optimization.
         - scale_inter: scale of the interaction ELMs
         - elm_alpha: the regularization of the ridge regression.
         - act: the activation function in the model. can be 'elu', 'relu' or a torch activation function.
@@ -75,7 +71,7 @@ class ELM_Regressor():
     def get_hidden_values(self, X):
         '''
         This step computes the values in the hidden layer. For this, we iterate
-        through the input features and multiple the feature values with the weights 
+        through the input features and multiply the feature values with the weights 
         from hidden_list. After applying the activation function, we return the result
         in X_hid
         '''
@@ -112,8 +108,8 @@ class ELM_Regressor():
 
     def predict_single(self, x, i):
         '''
-        This function computes the output of one shape function. Note, that the 
-        bias term is not used for this prediction.
+        This function computes the partial output of one base function for one feature.
+        Note, that the bias term is not used for this prediction.
         Input parameters:
         x: a vector representing the values which are used for feature i
         i: the index of the feature that should be used for the prediction
@@ -128,11 +124,12 @@ class ELM_Regressor():
 
     def predict_single_inter(self, x1, x2, i):
         '''
-        This function computes the output of one shape function. Note, that the 
-        bias term is not used for this prediction.
+        This function computes the partial output of one shape function for one feature pair.
+        Note, that the bias term is not used for this prediction.
         Input parameters:
-        x: a vector representing the values which are used for feature i
-        i: the index of the feature that should be used for the prediction
+        x1: vector representing the values which are used for the first feature
+        x2: vector representing the values which are used for the second feature
+        i: the index of the feature pair that should be used for the prediction
         '''
 
         x1 = x1.reshape(len(x1), 1)
@@ -162,18 +159,18 @@ class ELM_Regressor():
 
 class IGANN:
     '''
-    This class represents our model igann. We can use it mostly like
-    a normal sklearn model (using .fit, .predict, .predict_proba, ...). The model can be used for two 
-    tasks --- regression and binary classification. For binary classification, the labels must be -1 
-    and 1. 
-    The model first fits a linear model and then subsequently, train ELMs on the gradients of the
-    previous prediction (the boosting idea).
+    This class represents the IGANN model. It can be used like a
+    sklearn model (i.e., it includes .fit, .predict, .predict_proba, ...).
+    The model can be used for a regression task or a binary classification task.
+    For binary classification, the labels must be set to -1 and 1 (Note that labels with
+    0 and 1 are transformed automatically). The model first fits a linear model and then
+    subsequently adds ELMs according to a boosting framework.
     '''
     def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1,
     		     elm_scale=1, elm_scale_inter=0.5, elm_alpha=1, feat_select=None, interactions=0,
                  act='elu', early_stopping=50, device='cpu', random_state=1, verbose=0):
         '''
-        Initialize the model. Input parameters:
+        Initializes the model. Input parameters:
         task: defines the task, can be 'regression' or 'classification'
         n_hid: the number of hidden neurons for one feature
         n_estimators: the maximum number of estimators (ELMs) to be fitted.
@@ -186,11 +183,11 @@ class IGANN:
         interactions: the number of interactions that should be fit.
         act: the activation function in the ELM model. Can be 'elu', 'relu' or a torch activation function.
         early_stopping: we use early stopping which means that we don't continue training more ELM 
-        models, if there as been no improvements for 'early_stopping' number of iterations.
+        models, if there has been no improvements for 'early_stopping' number of iterations.
         device: the device on which the model is optimized. Can be 'cpu' or 'cuda'
-        random_state: should take the randomness away.
-        verbose: tells how many information to be printed when fitting. Can be 0 for (almost) no 
-        information, 1 for printed losses, and 2 for plotted shape functions in each iteration.
+        random_state: random seed.
+        verbose: tells how much information should be printed when fitting. Can be 0 for (almost) no 
+        information, 1 for printing losses, and 2 for plotting shape functions in each iteration.
         '''
         self.task = task
         self.n_hid = n_hid
@@ -276,10 +273,9 @@ class IGANN:
         feat_pairs: Given feature pairs
         fixed_feat: List of feature names which should definitely end up in the model
         val_set: can be tuple (X_val, y_val) for a defined validation set. If not set,
-        it will be split from the training set randomly. (This can be helpful for tasks like 
-        time series analysis)
-        eval: can be tuple (X_test, y_test) to have a peek on the test performance
-        plot_fixed_features: Usually, the most important features are plotted for verbose=2.
+        it will be split from the training set randomly.
+        eval: can be tuple (X_test, y_test) for additional evaluation during training
+        plot_fixed_features: Per default the most important features are plotted for verbose=2.
         This can be changed here to keep track of the same feature throughout training.
         '''
 
@@ -324,7 +320,7 @@ class IGANN:
 
         # Split the data into train and validation data and compute the prediction of the
         # linear model. For regression this is straightforward, for classification, we 
-        # want to the logits and not the probabilities. That's why we multiply X with 
+        # work with the logits and not the probabilities. That's why we multiply X with 
         # the coefficients and don't use the predict_proba function.
         if self.task == 'classification':
             if val_set == None:
@@ -405,10 +401,11 @@ class IGANN:
         X_val: the validation feature matrix
         y_val: the validation targets
         y_hat_val: the current prediction for y_val
-        eval: can be tuple (X_test, y_test) to have a peek on the test performance
+        eval: can be tuple (X_test, y_test) for additional evaluation during training
         best_loss: best previous loss achieved. This is to keep track of the overall best sequence of ELMs.
-        plot_fixed_features: Usually, the most important features are plotted for verbose=2.
-        feat_pairs: list of feature pairs when fitting interactions
+        plot_fixed_features: Per default the most important features are plotted for verbose=2.
+        This can be changed here to keep track of the same feature throughout training.
+        feat_pairs: list of feature pairs to fit interactions
         '''
 
         counter_no_progress = 0
@@ -419,15 +416,15 @@ class IGANN:
             hessian_train_sqrt=self._loss_sqrt_hessian(y, y_hat)
             y_tilde=torch.sqrt(torch.tensor(0.5).to(self.device))*self._get_y_tilde(y,y_hat)
 
-            # Fit an ELM on y_tilde_tilde
+            # Init ELM
             regressor = ELM_Regressor(n_input=X.shape[1], n_hid=self.n_hid,
                                       feat_pairs=feat_pairs, seed=counter, scale=self.elm_scale, scale_inter=self.elm_scale_inter, elm_alpha=self.elm_alpha,
                                       act=self.act, device=self.device)
 
-            # Fit  ELM regressor
+            # Fit ELM regressor
             X_hid = regressor.fit(X, y_tilde, torch.sqrt(torch.tensor(0.5).to(self.device))*self.boost_rate*hessian_train_sqrt[:,None])
 
-            # Make a prediction of the ELM for the gradients of train and val
+            # Make a prediction of the ELM for the update of y_hat
             train_regressor_pred = regressor.predict(X_hid, hidden=True).squeeze()
             val_regressor_pred = regressor.predict(X_val).squeeze()
 
@@ -530,10 +527,10 @@ class IGANN:
     def _find_interactions(self, X, y, mult_coef):
         '''
         This function finds the most promising pair of features for predicting y. It does so
-        by generating a large hidden layer consisting of hidden activations of ELMs, where each ELM
+        by generating a large hidden layer consisting of hidden layers of ELMs, where each ELM
         is getting two inputs. Then, we train Lasso models with varying regularization strength,
-        until all coefficients are zero except for the coefficients within one/two/three 'ELM block'. 
-        Thereby the number of ELM blocks must be equal to the input parameter self.interactions.
+        until all coefficients are zero except for 'ELM block' coefficients. Thereby the number
+        of ELM blocks must be equal to the input parameter self.interactions.
         This function should not be called from outside.
         '''
         if len(X) > 10000:
@@ -600,7 +597,7 @@ class IGANN:
 
     def _print_results(self, counter, counter_no_progress, eval, boost_rate, train_loss, val_loss):
         '''
-        This function simply plots our results.
+        This function plots our results.
         '''
         if counter_no_progress == 0:
             new_best_symb = '*'
@@ -648,7 +645,7 @@ class IGANN:
     def predict(self, X):
         '''
         This function returns a prediction for a given feature matrix X.
-        Note: for a classification task, this simply returns the raw logit values.
+        Note: for a classification task, it returns the raw logit values.
         '''
         if type(X) == pd.DataFrame:
             X = np.array(X)
@@ -825,7 +822,7 @@ class IGANN:
 
     def plot_interactions(self, create_figure=True, scaler_dict=None):
         """
-        create_figure:
+        create_figure: Boolean to decide whether or not to create the interaction plot
         scaler_dict: dictionary that maps every numerical feature to the respective (sklearn) scaler.
                      scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not Non
         """
