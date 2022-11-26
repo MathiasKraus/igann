@@ -204,7 +204,6 @@ class IGANN:
         self.device = device
         self.random_state = random_state
         self.verbose = verbose
-        self.top_k_features = []
         self.regressors = []
         self.boosting_rates = []
         self.train_scores = []
@@ -254,7 +253,6 @@ class IGANN:
         return x
 
     def _reset_state(self):
-        self.top_k_features = []
         self.regressors = []
         self.boosting_rates = []
         self.train_scores = []
@@ -681,25 +679,16 @@ class IGANN:
         feature_effects = self.get_shape_functions_as_dict()
         if plot_by_list is None:
             top_k = [d for d in sorted(feature_effects, reverse=True, key=lambda x: x['avg_effect'])][:show_n]
+            show_n = min(show_n, len(top_k))
         else:
             top_k = [d for d in sorted(feature_effects, reverse=True, key=lambda x: x['avg_effect'])]
             show_n = len(plot_by_list)
 
-        if [d['name'] for d in top_k] != self.top_k_features:
-            create_figure = True
-            self.top_k_features = plot_by_list
-        else:
-            create_figure=False
-
-        if create_figure:
-            plt.close(fig="Shape functions")
-            self.fig, self.axs = plt.subplots(2, show_n, figsize=(14, 4),
-                                    gridspec_kw={'height_ratios': [5, 1]},
-                                    num="Shape functions")
-            plt.subplots_adjust(wspace=0.4)
-            self.plot_objects=[]
-        else:
-            plot_object_counter = 0
+        plt.close(fig="Shape functions")
+        fig, axs = plt.subplots(2, show_n, figsize=(14, 4),
+                                gridspec_kw={'height_ratios': [5, 1]},
+                                num="Shape functions")
+        plt.subplots_adjust(wspace=0.4)
 
         i = 0
         for d in top_k:
@@ -708,64 +697,45 @@ class IGANN:
             if scaler_dict:
                 d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
             if len(d['x']) < 4:
-                if create_figure:
-                    if show_n == 1:
-                        plot_object = self.axs[0].bar(d['x'], d['y'], color='black',
-                                                      width = 0.1*(d['x'].max() - d['x'].min()))
-                        self.axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
-                        self.axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                                    d['avg_effect']))
-                    else:
-                        plot_object = self.axs[0][i].bar(d['x'], d['y'], color='black',
-                                                      width = 0.1*(d['x'].max() - d['x'].min()))
-                        self.axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
-                        self.axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                                       d['avg_effect']))
-                    if type(plot_object)==list:
-                        plot_object=plot_object[0]
-
-                    self.plot_objects.append(plot_object)
+                if show_n == 1:
+                    sns.barplot(x=d['x'].numpy(), y=d['y'].numpy(), color="darkblue", ax=axs[0])
+                    axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                    axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                                                                d['avg_effect']))
+                    axs[0].grid()
                 else:
-                    plot_object = self.plot_objects[plot_object_counter]
-                    plot_object_counter += 1
-                    plot_object.set_data(d['x'], d['y'])
-                    self.axs[0][i].set_ylim(bottom=min(d['y']), top=max(d['y']))
-                    self.fig.canvas.draw_idle()
-                    self.fig.canvas.flush_events()
+                    sns.barplot(x=d['x'].numpy(), y=d['y'].numpy(), color="darkblue", ax=axs[0][i])
+                    axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                    axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                                                                   d['avg_effect']))
+                    axs[0][i].grid()
+                    
             else:
-                if create_figure:
-                    if show_n == 1:
-                        plot_object = self.axs[0].plot(d['x'], d['y'], c='black')
-                        self.axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
-                        self.axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                              d['avg_effect']))
-                    else:
-                        plot_object = self.axs[0][i].plot(d['x'], d['y'], c='black')
-                        self.axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='gray')
-                        self.axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                                       d['avg_effect']))
-                    if type(plot_object)==list:
-                        plot_object=plot_object[0]
-
-                    self.plot_objects.append(plot_object)
+                if show_n == 1:
+                    g = sns.lineplot(d['x'], d['y'], ax=axs[0], linewidth=2, color="darkblue")
+                    g.axhline(y=0, color="grey", linestyle="--")
+                    axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                    axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                                                          d['avg_effect']))
+                    axs[0].grid()
                 else:
-                    plot_object = self.plot_objects[plot_object_counter]
-                    plot_object_counter += 1
-                    plot_object.set_data(d['x'],d['y'])
-                    self.axs[0][i].set_ylim(bottom=min(d['y']), top=max(d['y']))
-                    self.fig.canvas.draw_idle()
-                    self.fig.canvas.flush_events()
+                    g = sns.lineplot(d['x'], d['y'], ax=axs[0][i], linewidth=2, color="darkblue")
+                    g.axhline(y=0, color="grey", linestyle="--")
+                    axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                    axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                                                                   d['avg_effect']))
+                    axs[0][i].grid()
+                    
             i += 1
 
-        if create_figure:
-            if show_n == 1:
-                self.axs[1].get_xaxis().set_visible(False)
-                self.axs[1].get_yaxis().set_visible(False)
-            else:
-                for i in range(show_n):
-                    self.axs[1][i].get_xaxis().set_visible(False)
-                    self.axs[1][i].get_yaxis().set_visible(False)
-            plt.show()
+        if show_n == 1:
+            axs[1].get_xaxis().set_visible(False)
+            axs[1].get_yaxis().set_visible(False)
+        else:
+            for i in range(show_n):
+                axs[1][i].get_xaxis().set_visible(False)
+                axs[1][i].get_yaxis().set_visible(False)
+        plt.show()
 
     def plot_interactions(self, scaler_dict=None):
         """
@@ -773,9 +743,8 @@ class IGANN:
                      scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not Non
         """
         plt.close(fig="Interactions")
-        self.fig_inter, self.axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(int(6 * len(self.feat_pairs)), 4), num="Interactions") #1,
+        fig_inter, axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(int(6 * len(self.feat_pairs)), 4), num="Interactions") #1,
         plt.subplots_adjust(wspace=0.2)
-        self.plot_objects_inter=[]
 
         for i, fp in enumerate(self.feat_pairs):
             x1 = torch.linspace(self.unique[fp[0]].min(), self.unique[fp[0]].max(), 50).to(self.device)
@@ -792,33 +761,27 @@ class IGANN:
                 x2 = scaler_dict[self.feature_names[fp[1]]].inverse_transform(x2.cpu().reshape(-1, 1)).squeeze()
 
             if len(self.feat_pairs) == 1:
-                plot_object = self.axs_inter.pcolormesh(x1.cpu(), x2.cpu(), pred, shading='nearest')
-                self.fig_inter.colorbar(plot_object, ax=self.axs_inter)
-                #self.axs_inter.set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[0][0]],
-                #                                                      self.feature_names[self.feat_pairs[0][1]]))
-                self.axs_inter.set_title('Min: {:.2f}, Max: {:.2f}'.format(torch.min(pred), torch.max(pred)))
-                self.axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
-                self.axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
+                plot_object = axs_inter.pcolormesh(x1.cpu(), x2.cpu(), pred, shading='nearest')
+                fig_inter.colorbar(plot_object, ax=axs_inter)
+                axs_inter.set_title('Min: {:.2f}, Max: {:.2f}'.format(torch.min(pred), torch.max(pred)))
+                axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
+                axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
 
                 # self.axs_inter.set_aspect('equal', 'box')
-                self.axs_inter.set_aspect('auto', 'box')
-                self.plot_objects_inter.append(plot_object)
-                self.fig_inter.tight_layout()
+                axs_inter.set_aspect('auto', 'box')
+                fig_inter.tight_layout()
                 plt.show()
             else:
-                plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='nearest')
-                #self.axs_inter[i].set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[i][0]],
-                #                                                      self.feature_names[self.feat_pairs[i][1]]))
-                self.fig_inter.colorbar(plot_object, ax=self.axs_inter[i])
-                self.axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f}'.format(np.min(pred), np.max(pred)))
-                self.axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
-                self.axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
+                plot_object = axs_inter[i].pcolormesh(x1, x2, pred, shading='nearest')
+                fig_inter.colorbar(plot_object, ax=axs_inter[i])
+                axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f}'.format(np.min(pred), np.max(pred)))
+                axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
+                axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
 
                 # self.axs_inter[i].set_aspect('equal', 'box')
-                self.axs_inter[i].set_aspect('auto', 'box')
-                self.plot_objects_inter.append(plot_object)
+                axs_inter[i].set_aspect('auto', 'box')
 
-        self.fig_inter.tight_layout()
+        fig_inter.tight_layout()
         plt.show()
 
     def plot_learning(self):
@@ -836,7 +799,6 @@ class IGANN:
 
 if __name__ == '__main__':
     from sklearn.datasets import make_circles
-    import seaborn as sns
 
     X_small, y_small = make_circles(n_samples=(250,500), random_state=3, noise=0.04, factor = 0.3)
     X_large, y_large = make_circles(n_samples=(250,500), random_state=3, noise=0.04, factor = 0.7)
@@ -848,6 +810,7 @@ if __name__ == '__main__':
     df.label = 2 * df.label - 1
 
     sns.scatterplot(data=df,x='x1',y='x2',hue='label')
+    df['x1'] = 1 * (df.x1 > 0)
 
     m = IGANN(n_estimators=100, n_hid=10, elm_alpha=5, boost_rate=1, interactions=1, verbose=2)
     start = time.time()
