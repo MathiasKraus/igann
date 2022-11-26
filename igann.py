@@ -228,7 +228,7 @@ class IGANN:
 
     def _clip_p(self, p):
         if torch.max(p) > 100 or torch.min(p) < -100:
-            warnings.warn('Cutting prediction to [-100, 100]. Consider higher regularization elm_alpha')
+            warnings.warn('Cutting prediction to [-100, 100]. Did you forget to scale y? Consider higher regularization elm_alpha.')
             return torch.clip(p, -100, 100)
         else:
             return p
