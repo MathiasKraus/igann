@@ -289,7 +289,8 @@ class IGANN:
         if type(y) == pd.Series:
             y = y.values
 
-        y = y.squeeze()
+        X = torch.from_numpy(X).float()
+        y = torch.from_numpy(y.squeeze()).float()
 
         if self.task == 'classification':
             if torch.min(y) != -1:
@@ -617,6 +618,9 @@ class IGANN:
         The first column denotes the probability of class -1, and the second column denotes the
         probability of class 1.
         '''
+        if self.task == 'regression':
+            warnings.warn('The call of predict_proba for a regression task was probably incorrect.')
+
         pred = self.predict(X)
         pred = self._clip_p(pred)
         pred = 1 / (1 + torch.exp(-pred))
@@ -817,9 +821,6 @@ if __name__ == '__main__':
 
     inputs = df[['x1', 'x2']]
     targets = df.label
-    
-    inputs = torch.from_numpy(inputs.values.astype(np.float32))
-    targets = torch.from_numpy(targets.values.astype(np.float32))
 
     m.fit(inputs, targets)
     end = time.time()
