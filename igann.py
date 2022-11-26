@@ -6,6 +6,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression, Lasso
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 class torch_Ridge():
     def __init__(self, alpha, device):
@@ -471,10 +472,7 @@ class IGANN:
                     else:
                         self.plot_single()
                         if len(self.feat_pairs) > 0:
-                            if counter==0:
-                                self.plot_interactions(True)
-                            else:
-                                self.plot_interactions(False)
+                            self.plot_interactions()
 
         if self.early_stopping > 0:
             # We remove the ELMs that did not improve the performance. Most likely best_iter equals self.early_stopping.
@@ -631,17 +629,6 @@ class IGANN:
 
         return ret
 
-    def _update_predict(self, X, pred, boost_rate, regressor):
-        '''
-        This is a helper function that speeds up training when we pass an evaluation set.
-        '''
-        if type(X) == pd.DataFrame:
-            X = np.array(X)
-        pred_nn = boost_rate * regressor.predict(X).squeeze()
-        pred += pred_nn
-
-        return pred
-
     def predict(self, X):
         '''
         This function returns a prediction for a given feature matrix X.
@@ -664,16 +651,16 @@ class IGANN:
     def get_shape_functions_as_dict(self):
         feature_effects = []
         for i, feat_name in enumerate(self.feature_names):
-            linspac = self.unique[i]
+            feat_values = self.unique[i]
             if self.task == 'classification':
-                pred = self.init_classifier.coef_[0, i] * linspac
+                pred = self.init_classifier.coef_[0, i] * feat_values
             else:
-                pred = self.init_classifier.coef_[i] * linspac
-            linspac = linspac.to(self.device)
+                pred = self.init_classifier.coef_[i] * feat_values
+            feat_values = feat_values.to(self.device)
             for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
-                pred += (boost_rate * regressor.predict_single(linspac.reshape(-1, 1), i).squeeze()).cpu()
+                pred += (boost_rate * regressor.predict_single(feat_values.reshape(-1, 1), i).squeeze()).cpu()
             feature_effects.append(
-                {'name': feat_name, 'x': linspac.cpu(),
+                {'name': feat_name, 'x': feat_values.cpu(),
                     'y': pred, 'avg_effect': torch.mean(torch.abs(pred)),
                     'hist': self.hist[i]})
 
@@ -687,7 +674,7 @@ class IGANN:
         '''
         This function plots the most important shape functions.
         Parameters:
-        show_n: the number of shape functions that should be plotted (don't know if this works).
+        show_n: the number of shape functions that should be plotted.
         scaler_dict: dictionary that maps every numerical feature to the respective (sklearn) scaler.
                      scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not None
         '''
@@ -780,59 +767,15 @@ class IGANN:
                     self.axs[1][i].get_yaxis().set_visible(False)
             plt.show()
 
-    '''
-    def plot_interactions_categorical_continuous(self, cat_feat, cont_feat, feat_pair_num):
-        #plt.close(fig="Interactions")
-        #self.fig_inter, self.axs_inter = plt.subplots(1, 1, figsize=(14, 10), num="Interactions")
-        #plt.subplots_adjust(wspace=0.4)
-
-        for x1 in self.unique[cat_feat]:
-            x2 = np.linspace(self.unique[cont_feat].min(), self.unique[cont_feat].max(), 200)
-            pred = np.zeros(len(x2))
-            x1_stat = x1 * np.ones(len(x2))
-
-            for regressor, boost_rate in zip(self.regressors,
-                                                self.boosting_rates):
-                if cat_feat < cont_feat:
-                    pred += boost_rate * regressor.predict_single_inter(x1_stat, x2, feat_pair_num).squeeze()
-                else:
-                    pred += boost_rate * regressor.predict_single_inter(x2, x1_stat, feat_pair_num).squeeze()
-
-            if self.task == 'classification':
-                single_pred_x1 = self.init_classifier.coef_[0, cat_feat] * x1
-                single_pred_x2 = self.init_classifier.coef_[0, cont_feat] * x2
-            else:
-                single_pred_x1 = self.init_classifier.coef_[cat_feat] * x1
-                single_pred_x2 = self.init_classifier.coef_[cont_feat] * x2
-
-            for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
-                single_pred_x1 += (boost_rate * regressor.predict_single(x1.reshape(-1, 1), cat_feat).squeeze())
-                single_pred_x2 += (boost_rate * regressor.predict_single(x2.reshape(-1, 1), cont_feat).squeeze())
-
-
-            pred += single_pred_x2
-            pred += single_pred_x1
-
-            plt.plot(x2, pred, label=str(x1))
-
-        plt.legend()
-        plt.show()
-    '''
-
-
-    def plot_interactions(self, create_figure=True, scaler_dict=None):
+    def plot_interactions(self, scaler_dict=None):
         """
-        create_figure: Boolean to decide whether or not to create the interaction plot
         scaler_dict: dictionary that maps every numerical feature to the respective (sklearn) scaler.
                      scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not Non
         """
-        if create_figure:
-            plt.close(fig="Interactions")
-            self.fig_inter, self.axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(int(6 * len(self.feat_pairs)), 4), num="Interactions") #1,
-            plt.subplots_adjust(wspace=0.2)
-            self.plot_objects_inter=[]
-        else:
-            plot_object_counter = 0
+        plt.close(fig="Interactions")
+        self.fig_inter, self.axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(int(6 * len(self.feat_pairs)), 4), num="Interactions") #1,
+        plt.subplots_adjust(wspace=0.2)
+        self.plot_objects_inter=[]
 
         for i, fp in enumerate(self.feat_pairs):
             x1 = torch.linspace(self.unique[fp[0]].min(), self.unique[fp[0]].max(), 50).to(self.device)
@@ -848,40 +791,33 @@ class IGANN:
                 x1 = scaler_dict[self.feature_names[fp[0]]].inverse_transform(x1.cpu().reshape(-1, 1)).squeeze()
                 x2 = scaler_dict[self.feature_names[fp[1]]].inverse_transform(x2.cpu().reshape(-1, 1)).squeeze()
 
-            if create_figure:
-                if len(self.feat_pairs) == 1:
-                    plot_object = self.axs_inter.pcolormesh(x1.cpu(), x2.cpu(), pred, shading='nearest')
-                    self.fig_inter.colorbar(plot_object, ax=self.axs_inter)
-                    #self.axs_inter.set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[0][0]],
-                    #                                                      self.feature_names[self.feat_pairs[0][1]]))
-                    self.axs_inter.set_title('Min: {:.2f}, Max: {:.2f}'.format(torch.min(pred), torch.max(pred)))
-                    self.axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
-                    self.axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
+            if len(self.feat_pairs) == 1:
+                plot_object = self.axs_inter.pcolormesh(x1.cpu(), x2.cpu(), pred, shading='nearest')
+                self.fig_inter.colorbar(plot_object, ax=self.axs_inter)
+                #self.axs_inter.set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[0][0]],
+                #                                                      self.feature_names[self.feat_pairs[0][1]]))
+                self.axs_inter.set_title('Min: {:.2f}, Max: {:.2f}'.format(torch.min(pred), torch.max(pred)))
+                self.axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
+                self.axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
 
-                    # self.axs_inter.set_aspect('equal', 'box')
-                    self.axs_inter.set_aspect('auto', 'box')
-                    self.plot_objects_inter.append(plot_object)
-                    self.fig_inter.tight_layout()
-                    plt.show()
-                else:
-                    plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='nearest')
-                    #self.axs_inter[i].set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[i][0]],
-                    #                                                      self.feature_names[self.feat_pairs[i][1]]))
-                    self.fig_inter.colorbar(plot_object, ax=self.axs_inter[i])
-                    self.axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f}'.format(np.min(pred), np.max(pred)))
-                    self.axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
-                    self.axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
-
-                    # self.axs_inter[i].set_aspect('equal', 'box')
-                    self.axs_inter[i].set_aspect('auto', 'box')
-                    self.plot_objects_inter.append(plot_object)
-
+                # self.axs_inter.set_aspect('equal', 'box')
+                self.axs_inter.set_aspect('auto', 'box')
+                self.plot_objects_inter.append(plot_object)
+                self.fig_inter.tight_layout()
+                plt.show()
             else:
-                plot_object = self.plot_objects_inter[plot_object_counter]
-                plot_object_counter +=1
-                plot_object.set_array(pred)
-                self.fig_inter.canvas.draw()
-                self.fig_inter.canvas.flush_events()
+                plot_object = self.axs_inter[i].pcolormesh(x1, x2, pred, shading='nearest')
+                #self.axs_inter[i].set_title('Interaction ({},{})'.format(self.feature_names[self.feat_pairs[i][0]],
+                #                                                      self.feature_names[self.feat_pairs[i][1]]))
+                self.fig_inter.colorbar(plot_object, ax=self.axs_inter[i])
+                self.axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f}'.format(np.min(pred), np.max(pred)))
+                self.axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
+                self.axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
+
+                # self.axs_inter[i].set_aspect('equal', 'box')
+                self.axs_inter[i].set_aspect('auto', 'box')
+                self.plot_objects_inter.append(plot_object)
+
         self.fig_inter.tight_layout()
         plt.show()
 
@@ -913,7 +849,7 @@ if __name__ == '__main__':
 
     sns.scatterplot(data=df,x='x1',y='x2',hue='label')
 
-    m = IGANN(n_estimators=2000, n_hid=10, elm_alpha=5, boost_rate=1, interactions=1, verbose=1)
+    m = IGANN(n_estimators=100, n_hid=10, elm_alpha=5, boost_rate=1, interactions=1, verbose=2)
     start = time.time()
 
     inputs = df[['x1', 'x2']]
@@ -925,3 +861,7 @@ if __name__ == '__main__':
     m.fit(inputs, targets)
     end = time.time()
     print(end - start)
+    
+    m.plot_learning()
+    m.plot_single(show_n=7)
+    m.plot_interactions()
