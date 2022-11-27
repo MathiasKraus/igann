@@ -15,10 +15,10 @@ Mathias Kraus, FAU Erlangen-Nürnberg
 Daniel Tschernutter, ETH Zurich  
 Sven Weinzierl, FAU Erlangen-Nürnberg  
 Patrick Zschech, FAU Erlangen-Nürnberg  
-Nico Hambauer, FAU Erlangen-Nürnberg
-Sven Kruschel, FAU Erlangen-Nürnberg
-Lasse Bohlen, FAU Erlangen-Nürnberg
-Julian Rosenberger, FAU Erlangen-Nürnberg
+Nico Hambauer, FAU Erlangen-Nürnberg  
+Sven Kruschel, FAU Erlangen-Nürnberg  
+Lasse Bohlen, FAU Erlangen-Nürnberg  
+Julian Rosenberger, FAU Erlangen-Nürnberg  
 
 # Dependencies
 
