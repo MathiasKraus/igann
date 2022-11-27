@@ -248,10 +248,6 @@ class IGANN:
         else:
             return torch.sqrt(torch.tensor(2.0).to(self.device))*(y - p)
 
-    def _act(self, x):
-        x[x <= 0] = torch.exp(x[x <= 0]) - 1
-        return x
-
     def _reset_state(self):
         self.regressors = []
         self.boosting_rates = []
