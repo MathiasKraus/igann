@@ -712,14 +712,14 @@ class IGANN:
                     
             else:
                 if show_n == 1:
-                    g = sns.lineplot(d['x'], d['y'], ax=axs[0], linewidth=2, color="darkblue")
+                    g = sns.lineplot(x=d['x'].numpy(), y=d['y'].numpy(), ax=axs[0], linewidth=2, color="darkblue")
                     g.axhline(y=0, color="grey", linestyle="--")
                     axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                     axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                           d['avg_effect']))
                     axs[0].grid()
                 else:
-                    g = sns.lineplot(d['x'], d['y'], ax=axs[0][i], linewidth=2, color="darkblue")
+                    g = sns.lineplot(x=d['x'].numpy(), y=d['y'].numpy(), ax=axs[0][i], linewidth=2, color="darkblue")
                     g.axhline(y=0, color="grey", linestyle="--")
                     axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                     axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
