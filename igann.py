@@ -635,6 +635,7 @@ class IGANN:
         if type(X) == pd.DataFrame:
             X = np.array(X)
         X = X[:, self.feature_indizes]
+        X = torch.from_numpy(X).float()
         pred_nn = torch.zeros(len(X), dtype=torch.float32)
         for boost_rate, regressor in zip(self.boosting_rates, self.regressors):
             pred_nn += boost_rate * regressor.predict(X).squeeze()
@@ -825,3 +826,5 @@ if __name__ == '__main__':
     m.plot_learning()
     m.plot_single(show_n=7)
     m.plot_interactions()
+    
+    m.predict(inputs)
