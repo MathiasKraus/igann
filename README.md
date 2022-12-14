@@ -28,7 +28,8 @@ The project depends on PyTorch (tested with version 1.13.0).
 
 IGANN can in general be used similar to sklearn models. The methods to interact with IGANN are the following:
 - .fit(X, y) for training IGANN on (X, y) dataset
-- .predict(X) to compute simple prediction for regression or logits for classification tasks 
+- .predict_raw(X) to compute simple prediction for regression or raw logits for classification tasks. Per default values greater than 0 could be interpreted as belonging to class 1 and values smaller than 0 as belonging to class -1. 
+- .predict(X) to compute simple prediction for regression or class prediction in {-1, 1} for classification tasks. If the IGANN parameter optimize_threshold is set to True, the threshold for the class prediction is optimized on the training data and hence deviates from the decision boundary of 0.
 - .predict_proba(X) to compute probability estimates
 - .plot_single() to show shape functions
 - .plot_learning() to show the learning curve on train and validation set

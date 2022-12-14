@@ -4,9 +4,11 @@ import warnings
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression, Lasso
+from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 
 class torch_Ridge():
     def __init__(self, alpha, device):
@@ -16,8 +18,9 @@ class torch_Ridge():
 
     def fit(self, X, y):
         self.coef_ = torch.linalg.solve(X.T @ X + self.alpha * torch.eye(X.shape[1]).to(self.device), X.T @ y)
+
     def predict(self, X):
-        return torch.dot(X, self.coef_)
+        return torch.dot(X.to(self.device), self.coef_)
 
 
 class ELM_Regressor():
@@ -53,7 +56,8 @@ class ELM_Regressor():
         self.hidden_mat = self.hidden_list * mask
 
         self.hidden_list_inter = [(torch.normal(mean=torch.zeros(1, n_hid), std=scale_inter).to(device),
-                                  torch.normal(mean=torch.zeros(1, n_hid), std=scale_inter).to(device)) for _ in range(len(feat_pairs))]
+                                   torch.normal(mean=torch.zeros(1, n_hid), std=scale_inter).to(device)) for _ in
+                                  range(len(feat_pairs))]
         self.output_model = None
         self.n_input = n_input
         self.n_hid = n_hid
@@ -158,6 +162,7 @@ class ELM_Regressor():
         self.output_model = m
         return X_hid
 
+
 class IGANN:
     '''
     This class represents the IGANN model. It can be used like a
@@ -167,9 +172,10 @@ class IGANN:
     0 and 1 are transformed automatically). The model first fits a linear model and then
     subsequently adds ELMs according to a boosting framework.
     '''
+
     def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1,
-    		     elm_scale=1, elm_scale_inter=0.5, elm_alpha=1, feat_select=None, interactions=0,
-                 act='elu', early_stopping=50, device='cpu', random_state=1, verbose=0):
+                 elm_scale=1, elm_scale_inter=0.5, elm_alpha=1, feat_select=None, interactions=0,
+                 act='elu', early_stopping=50, device='cpu', random_state=1, optimize_threshold=False, verbose=0):
         '''
         Initializes the model. Input parameters:
         task: defines the task, can be 'regression' or 'classification'
@@ -187,7 +193,8 @@ class IGANN:
         models, if there has been no improvements for 'early_stopping' number of iterations.
         device: the device on which the model is optimized. Can be 'cpu' or 'cuda'
         random_state: random seed.
-        verbose: tells how much information should be printed when fitting. Can be 0 for (almost) no 
+        optimize_threshold: if True, the threshold for the classification is optimized using train data only and using the ROC curve. Otherwise, per default the raw logit value greater 0 means class 1 and less 0 means class -1.
+        verbose: tells how much information should be printed when fitting. Can be 0 for (almost) no
         information, 1 for printing losses, and 2 for plotting shape functions in each iteration.
         '''
         self.task = task
@@ -203,6 +210,7 @@ class IGANN:
         self.interactions = interactions
         self.device = device
         self.random_state = random_state
+        self.optimize_threshold = optimize_threshold
         self.verbose = verbose
         self.regressors = []
         self.boosting_rates = []
@@ -289,6 +297,7 @@ class IGANN:
         y = torch.from_numpy(y.squeeze()).float()
 
         if self.task == 'classification':
+            # In the case of targets in {0,1}, transform them to {-1,1} for optimization purposes
             if torch.min(y) != -1:
                 y = 2 * y - 1
 
@@ -327,8 +336,12 @@ class IGANN:
                 X_val = val_set[0]
                 y_val = val_set[1]
 
-            y_hat = torch.squeeze(torch.from_numpy(self.init_classifier.coef_.astype(np.float32)) @ torch.transpose(X, 0, 1)) + float(self.init_classifier.intercept_)
-            y_hat_val = torch.squeeze(torch.from_numpy(self.init_classifier.coef_.astype(np.float32)) @ torch.transpose(X_val, 0, 1)) + float(self.init_classifier.intercept_)
+            y_hat = torch.squeeze(
+                torch.from_numpy(self.init_classifier.coef_.astype(np.float32)) @ torch.transpose(X, 0, 1)) + float(
+                self.init_classifier.intercept_)
+            y_hat_val = torch.squeeze(
+                torch.from_numpy(self.init_classifier.coef_.astype(np.float32)) @ torch.transpose(X_val, 0, 1)) + float(
+                self.init_classifier.intercept_)
 
         else:
             if val_set == None:
@@ -382,6 +395,9 @@ class IGANN:
         self._run_optimization(X, y, y_hat, X_val, y_val, y_hat_val, eval,
                                val_loss_init, plot_fixed_features,
                                feat_pairs=self.feat_pairs)
+
+        if self.task == 'classification' and self.optimize_threshold:
+            self.best_threshold = self._optimize_classification_threshold(X, y)
 
         return
 
@@ -516,7 +532,6 @@ class IGANN:
 
         return features
 
-
     def _find_interactions(self, X, y, mult_coef):
         '''
         This function finds the most promising pair of features for predicting y. It does so
@@ -566,7 +581,6 @@ class IGANN:
 
         return feat_pairs
 
-
     def _get_nonzero_feat_pairs(self, coef, X):
         '''
         This function computes how many ELM blocks are corresponding to coefficients != 0.
@@ -597,7 +611,7 @@ class IGANN:
         else:
             new_best_symb = ''
         if eval:
-            test_pred = self.predict(eval[0])
+            test_pred = self.predict_raw(eval[0])
             test_loss = self.criterion(test_pred, eval[1])
             self.test_losses.append(test_loss)
             print(
@@ -608,6 +622,35 @@ class IGANN:
                 '{}{}: BoostRate: {:.3f}, Train loss: {:.5f} Val loss: {:.5f}'.format(
                     new_best_symb, counter, boost_rate, train_loss, val_loss))
 
+    def _optimize_classification_threshold(self, X_train, y_train):
+        '''
+        This function optimizes the classification threshold for the training set for later predictions.
+        The use of the function is triggered by setting the parameter optimize_threshold to True.
+        This is one method which does the job. However, we noticed that it is not always the best method and hence it
+        defaults to no threshold optimization.
+        '''
+
+        y_proba = self.predict_raw(X_train)
+
+        # detach and numpy
+        y_proba = y_proba.detach().cpu().numpy()
+        y_train = y_train.detach().cpu().numpy()
+        fpr, tpr, trs = roc_curve(y_train, y_proba)
+
+        roc_scores = []
+        thresholds = []
+        for thres in trs:
+            thresholds.append(thres)
+            y_pred = np.where(y_proba > thres, 1, -1)
+            # Apply desired utility function to y_preds, for example accuracy.
+            roc_scores.append(roc_auc_score(y_train.squeeze(), y_pred.squeeze()))
+        # convert roc_scores to numpy array
+        roc_scores = np.array(roc_scores)
+        # get the index of the best threshold
+        ix = np.argmax(roc_scores)
+        # get the best threshold
+        return thresholds[ix]
+
     def predict_proba(self, X):
         '''
         Similarly to sklearn, this function returns a matrix of the same length as X and two columns.
@@ -617,7 +660,7 @@ class IGANN:
         if self.task == 'regression':
             warnings.warn('The call of predict_proba for a regression task was probably incorrect.')
 
-        pred = self.predict(X)
+        pred = self.predict_raw(X)
         pred = self._clip_p(pred)
         pred = 1 / (1 + torch.exp(-pred))
 
@@ -630,17 +673,40 @@ class IGANN:
     def predict(self, X):
         '''
         This function returns a prediction for a given feature matrix X.
+        Note: for a classification task, it returns the binary target values in a 1-d np.array.
+        If optimize_threshold is True for a classification task, the threshold is optimized on the training data.
+        '''
+        if self.task == 'regression':
+            return self.predict_raw(X)
+        else:
+            pred_raw = self.predict_raw(X)
+            # detach and numpy pred_raw
+            pred_raw = pred_raw.detach().cpu().numpy()
+            if self.optimize_threshold:
+                threshold = self.best_threshold
+            else:
+                threshold = 0
+            pred = np.where(pred_raw < threshold, np.ones_like(pred_raw) * -1, np.ones_like(pred_raw))
+            return pred
+
+    def predict_raw(self, X):
+        '''
+        This function returns a prediction for a given feature matrix X.
         Note: for a classification task, it returns the raw logit values.
         '''
         if type(X) == pd.DataFrame:
             X = np.array(X)
+        if isinstance(X, np.ndarray):
+            X = torch.from_numpy(X).float().to(self.device)
         X = X[:, self.feature_indizes]
-        X = torch.from_numpy(X).float()
-        pred_nn = torch.zeros(len(X), dtype=torch.float32)
+
+        pred_nn = torch.zeros(len(X), dtype=torch.float32).to(self.device)
         for boost_rate, regressor in zip(self.boosting_rates, self.regressors):
             pred_nn += boost_rate * regressor.predict(X).squeeze()
-        pred = pred_nn + (torch.from_numpy(self.init_classifier.coef_.astype(np.float32)) @ torch.transpose(X, 0, 1)).squeeze() + \
-                                  self.init_classifier.intercept_
+        pred_nn = pred_nn.to(self.device)
+        pred = pred_nn + (torch.from_numpy(self.init_classifier.coef_.astype(np.float32)).to(self.device) @ torch.transpose(X, 0,
+                                                                                                            1)).squeeze() + \
+               torch.from_numpy(self.init_classifier.intercept_).to(self.device)
 
         return pred
 
@@ -798,19 +864,20 @@ class IGANN:
         plt.legend()
         plt.show()
 
+
 if __name__ == '__main__':
     from sklearn.datasets import make_circles
 
-    X_small, y_small = make_circles(n_samples=(250,500), random_state=3, noise=0.04, factor = 0.3)
-    X_large, y_large = make_circles(n_samples=(250,500), random_state=3, noise=0.04, factor = 0.7)
+    X_small, y_small = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.3)
+    X_large, y_large = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.7)
 
-    y_small[y_small==1] = 0
+    y_small[y_small == 1] = 0
 
-    df = pd.DataFrame(np.vstack([X_small,X_large]),columns=['x1','x2'])
-    df['label'] = np.hstack([y_small,y_large])
+    df = pd.DataFrame(np.vstack([X_small, X_large]), columns=['x1', 'x2'])
+    df['label'] = np.hstack([y_small, y_large])
     df.label = 2 * df.label - 1
 
-    sns.scatterplot(data=df,x='x1',y='x2',hue='label')
+    sns.scatterplot(data=df, x='x1', y='x2', hue='label')
     df['x1'] = 1 * (df.x1 > 0)
 
     m = IGANN(n_estimators=100, n_hid=10, elm_alpha=5, boost_rate=1, interactions=1, verbose=2)
@@ -822,9 +889,9 @@ if __name__ == '__main__':
     m.fit(inputs, targets)
     end = time.time()
     print(end - start)
-    
+
     m.plot_learning()
     m.plot_single(show_n=7)
     m.plot_interactions()
-    
+
     m.predict(inputs)
