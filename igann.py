@@ -31,7 +31,9 @@ class ELM_Regressor():
     performance significantly as it reduces the training task to a regularized linear
     regression (Ridge Regression), see "Extreme Learning Machines" for more details.
     '''
-    def __init__(self, n_input, n_hid, feat_pairs, seed=0, scale=10, scale_inter=1, elm_alpha=0.0001, act='elu', device='cpu'):
+
+    def __init__(self, n_input, n_hid, feat_pairs, seed=0, scale=10, scale_inter=1, elm_alpha=0.0001, act='elu',
+                 device='cpu'):
         '''
         Input parameters:
         - n_input: number of inputs/features (should be X.shape[1])
@@ -39,7 +41,7 @@ class ELM_Regressor():
         - feat_pairs: List of feature pairs that should be used in the regressor.
         - seed: This number sets the seed for generating the random weights. It should
                 be different for each regressor
-        - scale: the scale which is used to initialize the weights in the hidden layer of the 
+        - scale: the scale which is used to initialize the weights in the hidden layer of the
                  model. These weights are not changed throughout the optimization.
         - scale_inter: scale of the interaction ELMs
         - elm_alpha: the regularization of the ridge regression.
@@ -49,7 +51,7 @@ class ELM_Regressor():
         super().__init__()
         np.random.seed(seed)
         torch.manual_seed(seed)
-        # The following are the random weights in the model which are not optimized. 
+        # The following are the random weights in the model which are not optimized.
         self.hidden_list = torch.normal(mean=torch.zeros(n_input, n_input * n_hid), std=scale).to(device)
 
         mask = torch.block_diag(*[torch.ones(n_hid)] * n_input).to(device)
@@ -76,7 +78,7 @@ class ELM_Regressor():
     def get_hidden_values(self, X):
         '''
         This step computes the values in the hidden layer. For this, we iterate
-        through the input features and multiply the feature values with the weights 
+        through the input features and multiply the feature values with the weights
         from hidden_list. After applying the activation function, we return the result
         in X_hid
         '''
@@ -91,7 +93,7 @@ class ELM_Regressor():
             x_jn = X[:, j].unsqueeze(1)
             x_jn = x_jn @ self.hidden_list_inter[c][1]
 
-            X_hid_interactions[:, c * self.n_hid : (c + 1) * self.n_hid] = self.act(x_in + x_jn)
+            X_hid_interactions[:, c * self.n_hid: (c + 1) * self.n_hid] = self.act(x_in + x_jn)
 
         X_hid = torch.hstack([X_hid, X_hid_interactions])
 
@@ -122,7 +124,7 @@ class ELM_Regressor():
 
         # See self.predict for the description - it's almost equivalent.
         x_in = x.reshape(len(x), 1)
-        x_in = x_in @ self.hidden_mat[i,i*self.n_hid:(i+1)*self.n_hid].unsqueeze(0)
+        x_in = x_in @ self.hidden_mat[i, i * self.n_hid:(i + 1) * self.n_hid].unsqueeze(0)
         x_in = self.act(x_in)
         out = x_in @ self.output_model.coef_[i * self.n_hid: (i + 1) * self.n_hid].unsqueeze(1)
         return out
@@ -152,10 +154,10 @@ class ELM_Regressor():
 
     def fit(self, X, y, mult_coef):
         '''
-        This function fits the ELM on the training data (X, y). 
+        This function fits the ELM on the training data (X, y).
         '''
         X_hid = self.get_hidden_values(X)
-        X_hid_mult = X_hid*mult_coef
+        X_hid_mult = X_hid * mult_coef
         # Fit the ridge regression on the hidden values.
         m = torch_Ridge(alpha=self.elm_alpha, device=self.device)
         m.fit(X_hid_mult, y)
@@ -189,7 +191,7 @@ class IGANN:
         feat_select: Integer that says how many features should be selected
         interactions: the number of interactions that should be fit.
         act: the activation function in the ELM model. Can be 'elu', 'relu' or a torch activation function.
-        early_stopping: we use early stopping which means that we don't continue training more ELM 
+        early_stopping: we use early stopping which means that we don't continue training more ELM
         models, if there has been no improvements for 'early_stopping' number of iterations.
         device: the device on which the model is optimized. Can be 'cpu' or 'cuda'
         random_state: random seed.
@@ -224,9 +226,10 @@ class IGANN:
 
         if task == 'classification':
             # todo: torch
-            self.init_classifier = LogisticRegression(penalty='l1', solver='liblinear', C=1/self.init_reg,
+            self.init_classifier = LogisticRegression(penalty='l1', solver='liblinear', C=1 / self.init_reg,
                                                       random_state=random_state)
-            self.criterion = lambda prediction, target: torch.nn.BCEWithLogitsLoss()(prediction, torch.nn.ReLU()(target))
+            self.criterion = lambda prediction, target: torch.nn.BCEWithLogitsLoss()(prediction,
+                                                                                     torch.nn.ReLU()(target))
         elif task == 'regression':
             # todo: torch
             self.init_classifier = Lasso(alpha=self.init_reg)
@@ -236,8 +239,17 @@ class IGANN:
 
     def _clip_p(self, p):
         if torch.max(p) > 100 or torch.min(p) < -100:
-            warnings.warn('Cutting prediction to [-100, 100]. Did you forget to scale y? Consider higher regularization elm_alpha.')
+            warnings.warn(
+                'Cutting prediction to [-100, 100]. Did you forget to scale y? Consider higher regularization elm_alpha.')
             return torch.clip(p, -100, 100)
+        else:
+            return p
+
+    def _clip_p_numpy(self, p):
+        if np.max(p) > 100 or np.min(p) < -100:
+            warnings.warn(
+                'Cutting prediction to [-100, 100]. Did you forget to scale y? Consider higher regularization elm_alpha.')
+            return np.clip(p, -100, 100)
         else:
             return p
 
@@ -246,15 +258,15 @@ class IGANN:
         This function computes the square root of the hessians of the log loss or the mean squared error.
         '''
         if self.task == 'classification':
-            return 0.5 / torch.cosh(0.5*y*p)
+            return 0.5 / torch.cosh(0.5 * y * p)
         else:
             return torch.sqrt(torch.tensor([2.0]).to(self.device))
 
-    def _get_y_tilde(self,y,p):
+    def _get_y_tilde(self, y, p):
         if self.task == 'classification':
-            return y/torch.exp(0.5*y*p)
+            return y / torch.exp(0.5 * y * p)
         else:
-            return torch.sqrt(torch.tensor(2.0).to(self.device))*(y - p)
+            return torch.sqrt(torch.tensor(2.0).to(self.device)) * (y - p)
 
     def _reset_state(self):
         self.regressors = []
@@ -269,7 +281,7 @@ class IGANN:
     def fit(self, X, y, feat_pairs=None, fixed_feat=[],
             val_set=None, eval=None, plot_fixed_features=None):
         '''
-        This function fits the model on training data (X, y). 
+        This function fits the model on training data (X, y).
         Parameters:
         X: the feature matrix
         y: the targets
@@ -313,7 +325,7 @@ class IGANN:
 
         if self.feat_select != None:
             feature_indizes = self._select_features(X, y)
-            feature_indizes.extend([e for e,f in enumerate(self.feature_names) if f in fixed_feat])
+            feature_indizes.extend([e for e, f in enumerate(self.feature_names) if f in fixed_feat])
             self.feature_names = np.array([f for e, f in enumerate(self.feature_names) if e in feature_indizes])
             X = X[:, feature_indizes]
             self.feature_indizes = feature_indizes
@@ -324,12 +336,12 @@ class IGANN:
         self.init_classifier.fit(X, y)
 
         # Split the data into train and validation data and compute the prediction of the
-        # linear model. For regression this is straightforward, for classification, we 
-        # work with the logits and not the probabilities. That's why we multiply X with 
+        # linear model. For regression this is straightforward, for classification, we
+        # work with the logits and not the probabilities. That's why we multiply X with
         # the coefficients and don't use the predict_proba function.
         if self.task == 'classification':
             if val_set == None:
-                if self.verbose >=1:
+                if self.verbose >= 1:
                     print('Splitting data')
                 X, X_val, y, y_val = train_test_split(X, y, test_size=0.15, stratify=y, random_state=self.random_state)
             else:
@@ -345,7 +357,7 @@ class IGANN:
 
         else:
             if val_set == None:
-                if self.verbose >=1:
+                if self.verbose >= 1:
                     print('Splitting data')
                 X, X_val, y, y_val = train_test_split(X, y, test_size=0.15, random_state=self.random_state)
             else:
@@ -372,11 +384,11 @@ class IGANN:
         if self.verbose >= 1:
             print('Train: {:.4f} Val: {:.4f} {}'.format(train_loss_init, val_loss_init, 'init'))
 
-        if self.interactions==0:
+        if self.interactions == 0:
             self.feat_pairs = []
         else:
-            hessian_train_sqrt=self._loss_sqrt_hessian(y, y_hat)
-            y_tilde=self._get_y_tilde(y,y_hat)
+            hessian_train_sqrt = self._loss_sqrt_hessian(y, y_hat)
+            y_tilde = self._get_y_tilde(y, y_hat)
 
             if feat_pairs != None:
                 self.feat_pairs = []
@@ -388,9 +400,11 @@ class IGANN:
                 else:
                     self.feat_pairs = feat_pairs
             else:
-                self.feat_pairs = self._find_interactions(X, y_tilde, torch.sqrt(torch.tensor(0.5)) * hessian_train_sqrt[:,None])
+                self.feat_pairs = self._find_interactions(X, y_tilde,
+                                                          torch.sqrt(torch.tensor(0.5)) * hessian_train_sqrt[:, None])
 
-        X, y, y_hat, X_val, y_val, y_hat_val = X.to(self.device), y.to(self.device), y_hat.to(self.device), X_val.to(self.device), y_val.to(self.device), y_hat_val.to(self.device)
+        X, y, y_hat, X_val, y_val, y_hat_val = X.to(self.device), y.to(self.device), y_hat.to(self.device), X_val.to(
+            self.device), y_val.to(self.device), y_hat_val.to(self.device)
 
         self._run_optimization(X, y, y_hat, X_val, y_val, y_hat_val, eval,
                                val_loss_init, plot_fixed_features,
@@ -402,9 +416,9 @@ class IGANN:
         return
 
     def _run_optimization(self, X, y, y_hat, X_val, y_val, y_hat_val, eval,
-                         best_loss, plot_fixed_features, feat_pairs=[]):
+                          best_loss, plot_fixed_features, feat_pairs=[]):
         '''
-        This function runs the optimization for ELMs with single features or ELMs with 
+        This function runs the optimization for ELMs with single features or ELMs with
         pairs of features (interactions). This function should not be called from outside.
         Parameters:
         X: the training feature matrix
@@ -425,16 +439,19 @@ class IGANN:
 
         # Sequentially fit one ELM after the other. Max number is stored in self.n_estimators.
         for counter in range(self.n_estimators):
-            hessian_train_sqrt=self._loss_sqrt_hessian(y, y_hat)
-            y_tilde=torch.sqrt(torch.tensor(0.5).to(self.device))*self._get_y_tilde(y,y_hat)
+            hessian_train_sqrt = self._loss_sqrt_hessian(y, y_hat)
+            y_tilde = torch.sqrt(torch.tensor(0.5).to(self.device)) * self._get_y_tilde(y, y_hat)
 
             # Init ELM
             regressor = ELM_Regressor(n_input=X.shape[1], n_hid=self.n_hid,
-                                      feat_pairs=feat_pairs, seed=counter, scale=self.elm_scale, scale_inter=self.elm_scale_inter, elm_alpha=self.elm_alpha,
+                                      feat_pairs=feat_pairs, seed=counter, scale=self.elm_scale,
+                                      scale_inter=self.elm_scale_inter, elm_alpha=self.elm_alpha,
                                       act=self.act, device=self.device)
 
             # Fit ELM regressor
-            X_hid = regressor.fit(X, y_tilde, torch.sqrt(torch.tensor(0.5).to(self.device))*self.boost_rate*hessian_train_sqrt[:,None])
+            X_hid = regressor.fit(X, y_tilde,
+                                  torch.sqrt(torch.tensor(0.5).to(self.device)) * self.boost_rate * hessian_train_sqrt[
+                                                                                                    :, None])
 
             # Make a prediction of the ELM for the update of y_hat
             train_regressor_pred = regressor.predict(X_hid, hidden=True).squeeze()
@@ -452,14 +469,14 @@ class IGANN:
             train_loss = self.criterion(y_hat, y)
             val_loss = self.criterion(y_hat_val, y_val)
 
-            # Keep the ELM, the boosting rate and losses in lists, so 
+            # Keep the ELM, the boosting rate and losses in lists, so
             # we can later use them again.
             self.regressors.append(regressor)
             self.boosting_rates.append(self.boost_rate)
             self.train_losses.append(train_loss.cpu())
             self.val_losses.append(val_loss.cpu())
 
-            # This is the early stopping mechanism. If there was no improvement on the 
+            # This is the early stopping mechanism. If there was no improvement on the
             # validation set, we increase a counter by 1. If there was an improvement,
             # we set it back to 0.
             counter_no_progress += 1
@@ -470,14 +487,14 @@ class IGANN:
 
             if self.verbose >= 1:
                 self._print_results(counter, counter_no_progress, eval, self.boost_rate,
-                               train_loss, val_loss)
+                                    train_loss, val_loss)
 
             # Stop training if the counter for early stopping is greater than the parameter we passed.
             if counter_no_progress > self.early_stopping and self.early_stopping > 0:
                 break
 
             if self.verbose >= 2:
-                if counter%5==0:
+                if counter % 5 == 0:
                     if plot_fixed_features != None:
                         self.plot_single(plot_by_list=plot_fixed_features)
                     else:
@@ -501,7 +518,7 @@ class IGANN:
 
         lower_bound = 1e-10
         upper_bound = 1000
-        alpha = (lower_bound+upper_bound)/2
+        alpha = (lower_bound + upper_bound) / 2
         found = False
         for _ in range(1000):
             lasso = Lasso(alpha=alpha, random_state=self.random_state)
@@ -516,11 +533,11 @@ class IGANN:
                 found = True
                 break
             elif len(features) < self.feat_select:
-                upper_bound=alpha
-                alpha = (lower_bound+upper_bound)/2
+                upper_bound = alpha
+                alpha = (lower_bound + upper_bound) / 2
             else:
-                lower_bound=alpha
-                alpha = (lower_bound+upper_bound)/2
+                lower_bound = alpha
+                alpha = (lower_bound + upper_bound) / 2
 
         if not found:
             warnings.warn('Did not find wanted number of features!!!!')
@@ -548,28 +565,29 @@ class IGANN:
             if self.task == 'classification':
                 mult_coef = mult_coef[sample]
 
-        regressor = ELM_Regressor(X.shape[1], self.n_hid, [(i,j) for i in range(X.shape[1]) for j in range(X.shape[1])],
+        regressor = ELM_Regressor(X.shape[1], self.n_hid,
+                                  [(i, j) for i in range(X.shape[1]) for j in range(X.shape[1])],
                                   scale=self.elm_scale, scale_inter=self.elm_scale_inter, act=self.act, device='cpu')
         X_tilde = regressor.get_hidden_values(X)
-        X_tilde_tilde = X_tilde*mult_coef
+        X_tilde_tilde = X_tilde * mult_coef
 
         lower_bound = 1e-10
         upper_bound = 1000
-        alpha = (lower_bound+upper_bound)/2
+        alpha = (lower_bound + upper_bound) / 2
         found = False
         for _ in range(1000):
             lasso = Lasso(alpha=alpha, random_state=self.random_state)
             lasso.fit(X_tilde_tilde, y)
-            feat_pairs = self._get_nonzero_feat_pairs(lasso.coef_[self.n_hid*X.shape[1]:], X)
+            feat_pairs = self._get_nonzero_feat_pairs(lasso.coef_[self.n_hid * X.shape[1]:], X)
             if len(feat_pairs) == self.interactions:
                 found = True
                 break
             elif len(feat_pairs) < self.interactions:
-                upper_bound=alpha
-                alpha = (lower_bound+upper_bound)/2
+                upper_bound = alpha
+                alpha = (lower_bound + upper_bound) / 2
             else:
-                lower_bound=alpha
-                alpha = (lower_bound+upper_bound)/2
+                lower_bound = alpha
+                alpha = (lower_bound + upper_bound) / 2
 
         if not found:
             warnings.warn('Did not find wanted number of interactions!!!!')
@@ -661,10 +679,10 @@ class IGANN:
             warnings.warn('The call of predict_proba for a regression task was probably incorrect.')
 
         pred = self.predict_raw(X)
-        pred = self._clip_p(pred)
-        pred = 1 / (1 + torch.exp(-pred))
+        pred = self._clip_p_numpy(pred)
+        pred = 1 / (1 + np.exp(-pred))
 
-        ret = torch.zeros(len(X), 2)
+        ret = np.zeros((len(X), 2), dtype=np.float32)
         ret[:, 1] = pred
         ret[:, 0] = 1 - pred
 
@@ -673,7 +691,7 @@ class IGANN:
     def predict(self, X):
         '''
         This function returns a prediction for a given feature matrix X.
-        Note: for a classification task, it returns the binary target values in a 1-d np.array.
+        Note: for a classification task, it returns the binary target values in a 1-d np.array, it can hold -1 and 1.
         If optimize_threshold is True for a classification task, the threshold is optimized on the training data.
         '''
         if self.task == 'regression':
@@ -681,12 +699,11 @@ class IGANN:
         else:
             pred_raw = self.predict_raw(X)
             # detach and numpy pred_raw
-            pred_raw = pred_raw.detach().cpu().numpy()
             if self.optimize_threshold:
                 threshold = self.best_threshold
             else:
                 threshold = 0
-            pred = np.where(pred_raw < threshold, np.ones_like(pred_raw) * -1, np.ones_like(pred_raw))
+            pred = np.where(pred_raw < threshold, np.ones_like(pred_raw) * -1, np.ones_like(pred_raw)).squeeze()
             return pred
 
     def predict_raw(self, X):
@@ -703,10 +720,9 @@ class IGANN:
         pred_nn = torch.zeros(len(X), dtype=torch.float32).to(self.device)
         for boost_rate, regressor in zip(self.boosting_rates, self.regressors):
             pred_nn += boost_rate * regressor.predict(X).squeeze()
-        pred_nn = pred_nn.to(self.device)
-        pred = pred_nn + (torch.from_numpy(self.init_classifier.coef_.astype(np.float32)).to(self.device) @ torch.transpose(X, 0,
-                                                                                                            1)).squeeze() + \
-               torch.from_numpy(self.init_classifier.intercept_).to(self.device)
+        pred_nn = pred_nn.detach().cpu().numpy()
+        X = X.detach().cpu().numpy()
+        pred = pred_nn + (self.init_classifier.coef_.astype(np.float32) @ X.transpose()).squeeze() + self.init_classifier.intercept_
 
         return pred
 
@@ -726,8 +742,8 @@ class IGANN:
                 pred += (boost_rate * regressor.predict_single(feat_values.reshape(-1, 1), i).squeeze()).cpu()
             feature_effects.append(
                 {'name': feat_name, 'x': feat_values.cpu(),
-                    'y': pred, 'avg_effect': torch.mean(torch.abs(pred)),
-                    'hist': self.hist[i]})
+                 'y': pred, 'avg_effect': torch.mean(torch.abs(pred)),
+                 'hist': self.hist[i]})
 
         overall_effect = np.sum([d['avg_effect'] for d in feature_effects])
         for d in feature_effects:
@@ -768,31 +784,31 @@ class IGANN:
                     sns.barplot(x=d['x'].numpy(), y=d['y'].numpy(), color="darkblue", ax=axs[0])
                     axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                     axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                                d['avg_effect']))
+                                                           d['avg_effect']))
                     axs[0].grid()
                 else:
                     sns.barplot(x=d['x'].numpy(), y=d['y'].numpy(), color="darkblue", ax=axs[0][i])
                     axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                     axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                                   d['avg_effect']))
+                                                              d['avg_effect']))
                     axs[0][i].grid()
-                    
+
             else:
                 if show_n == 1:
                     g = sns.lineplot(x=d['x'].numpy(), y=d['y'].numpy(), ax=axs[0], linewidth=2, color="darkblue")
                     g.axhline(y=0, color="grey", linestyle="--")
                     axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                     axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                          d['avg_effect']))
+                                                           d['avg_effect']))
                     axs[0].grid()
                 else:
                     g = sns.lineplot(x=d['x'].numpy(), y=d['y'].numpy(), ax=axs[0][i], linewidth=2, color="darkblue")
                     g.axhline(y=0, color="grey", linestyle="--")
                     axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                     axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
-                                                                   d['avg_effect']))
+                                                              d['avg_effect']))
                     axs[0][i].grid()
-                    
+
             i += 1
 
         if show_n == 1:
@@ -810,7 +826,8 @@ class IGANN:
                      scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not Non
         """
         plt.close(fig="Interactions")
-        fig_inter, axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(int(6 * len(self.feat_pairs)), 4), num="Interactions") #1,
+        fig_inter, axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(int(6 * len(self.feat_pairs)), 4),
+                                            num="Interactions")  # 1,
         plt.subplots_adjust(wspace=0.2)
 
         for i, fp in enumerate(self.feat_pairs):
