@@ -223,6 +223,8 @@ class IGANN:
         self.test_losses = []
         self.regressor_predictions = []
         self.boost_rate = boost_rate
+        self.target_remapped_flag = False
+        '''Is set to true during the fit method if the target (y) is remapped to -1 and 1 instead of 0 and 1.'''
 
         if task == 'classification':
             # todo: torch
@@ -311,6 +313,7 @@ class IGANN:
         if self.task == 'classification':
             # In the case of targets in {0,1}, transform them to {-1,1} for optimization purposes
             if torch.min(y) != -1:
+                self.target_remapped_flag = True
                 y = 2 * y - 1
 
         if feat_pairs != None:
@@ -704,6 +707,10 @@ class IGANN:
             else:
                 threshold = 0
             pred = np.where(pred_raw < threshold, np.ones_like(pred_raw) * -1, np.ones_like(pred_raw)).squeeze()
+
+            if self.target_remapped_flag:
+                pred = np.where(pred == -1, 0, 1)
+
             return pred
 
     def predict_raw(self, X):
