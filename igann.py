@@ -8,7 +8,7 @@ from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+import abess.linear
 
 class torch_Ridge():
     def __init__(self, alpha, device):
@@ -134,7 +134,7 @@ class IGANN:
     '''
 
     def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1,
-                 elm_scale=1, elm_alpha=1, feat_select=None, act='elu', early_stopping=50, device='cpu',
+                 elm_scale=1, elm_alpha=1, sparse=0, act='elu', early_stopping=50, device='cpu',
                  random_state=1, optimize_threshold=False, verbose=0):
         '''
         Initializes the model. Input parameters:
@@ -145,7 +145,7 @@ class IGANN:
         init_reg: the initial regularization strength for the linear model.
         elm_scale: the scale of the random weights in the elm model.
         elm_alpha: the regularization strength for the ridge regression in the ELM model.
-        feat_select: Integer that says how many features should be selected
+        sparse: Tells if IGANN should be sparse or not. Integer denotes the max number of used features
         act: the activation function in the ELM model. Can be 'elu', 'relu' or a torch activation function.
         early_stopping: we use early stopping which means that we don't continue training more ELM
         models, if there has been no improvements for 'early_stopping' number of iterations.
@@ -163,7 +163,7 @@ class IGANN:
         self.act = act
         self.n_estimators = n_estimators
         self.early_stopping = early_stopping
-        self.feat_select = feat_select
+        self.sparse = sparse
         self.device = device
         self.random_state = random_state
         self.optimize_threshold = optimize_threshold
@@ -234,14 +234,12 @@ class IGANN:
         self.test_losses = []
         self.regressor_predictions = []
 
-    def fit(self, X, y, fixed_feat=[],
-            val_set=None, eval=None, plot_fixed_features=None):
+    def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None):
         '''
         This function fits the model on training data (X, y).
         Parameters:
         X: the feature matrix
         y: the targets
-        fixed_feat: List of feature names which should definitely end up in the model
         val_set: can be tuple (X_val, y_val) for a defined validation set. If not set,
         it will be split from the training set randomly.
         eval: can be tuple (X_test, y_test) for additional evaluation during training
@@ -269,9 +267,8 @@ class IGANN:
                 self.target_remapped_flag = True
                 y = 2 * y - 1
 
-        if self.feat_select != None:
+        if self.sparse > 0:
             feature_indizes = self._select_features(X, y)
-            feature_indizes.extend([e for e, f in enumerate(self.feature_names) if f in fixed_feat])
             self.feature_names = np.array([f for e, f in enumerate(self.feature_names) if e in feature_indizes])
             X = X[:, feature_indizes]
             self.feature_indizes = feature_indizes
@@ -434,42 +431,24 @@ class IGANN:
         return best_loss
 
     def _select_features(self, X, y):
-        regressor = ELM_Regressor(X.shape[1], self.n_hid, [],
+        regressor = ELM_Regressor(X.shape[1], self.n_hid, seed=0,
                                   scale=self.elm_scale, act=self.act, device='cpu')
         X_tilde = regressor.get_hidden_values(X)
+        groups = np.array([np.ones(self.n_hid) * i + 1 for i in range(X.shape[1])]).flatten()
 
-        lower_bound = 1e-10
-        upper_bound = 1000
-        alpha = (lower_bound + upper_bound) / 2
-        found = False
-        for _ in range(1000):
-            lasso = Lasso(alpha=alpha, random_state=self.random_state)
-            lasso.fit(X_tilde, y)
-            features = []
-            for pos in np.where(lasso.coef_ != 0)[0]:
-                block = int((pos - (pos % self.n_hid)) / self.n_hid)
-                if block not in features:
-                    features.append(block)
-
-            if len(features) == self.feat_select:
-                found = True
-                break
-            elif len(features) < self.feat_select:
-                upper_bound = alpha
-                alpha = (lower_bound + upper_bound) / 2
-            else:
-                lower_bound = alpha
-                alpha = (lower_bound + upper_bound) / 2
-
-        if not found:
-            warnings.warn('Did not find wanted number of features!!!!')
-            warnings.warn(f'Using {features}')
-
+        if self.task == 'classification':
+            m = abess.linear.LogisticRegression(path_type='gs', cv=3, s_max=self.sparse, thread=0)
+            m.fit(X_tilde.numpy(), np.where(y.numpy() == -1, 0, 1), group=groups)
         else:
-            if self.verbose > 0:
-                print(f'Found features {features}')
+            m = abess.linear.LinearRegression(path_type='gs', cv=3, s_max=self.sparse, thread=0)
+            m.fit(X_tilde.numpy(), y, group=groups)
+        
+        active_features = np.where(np.sum(m.coef_.reshape(-1, self.n_hid), axis=1) != 0)[0]
 
-        return features
+        if self.verbose > 0:
+            print(f'Found features {active_features}')
+
+        return active_features
 
     def _print_results(self, counter, counter_no_progress, eval, boost_rate, train_loss, val_loss):
         '''
@@ -690,8 +669,8 @@ class IGANN:
 
 
 if __name__ == '__main__':
-    from sklearn.datasets import make_circles
-
+    from sklearn.datasets import make_circles, make_regression
+    
     X_small, y_small = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.3)
     X_large, y_large = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.7)
 
@@ -704,7 +683,7 @@ if __name__ == '__main__':
     sns.scatterplot(data=df, x='x1', y='x2', hue='label')
     df['x1'] = 1 * (df.x1 > 0)
 
-    m = IGANN(n_estimators=100, n_hid=10, elm_alpha=5, boost_rate=1, verbose=2)
+    m = IGANN(n_estimators=100, n_hid=10, elm_alpha=5, boost_rate=1, sparse=0, verbose=2)
     start = time.time()
 
     inputs = df[['x1', 'x2']]
@@ -716,6 +695,12 @@ if __name__ == '__main__':
 
     m.plot_learning()
     m.plot_single(show_n=7)
-    m.plot_interactions()
 
     m.predict(inputs)
+    
+    X, y = make_regression(100000, 10, n_informative=3)
+    y = (y - y.mean()) / y.std()
+    m = IGANN(task='regression', sparse=5, verbose=2)
+    m.fit(X, y)
+    m.plot_learning()
+    m.plot_single()
