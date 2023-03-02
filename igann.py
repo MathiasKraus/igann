@@ -32,18 +32,16 @@ class ELM_Regressor():
     regression (Ridge Regression), see "Extreme Learning Machines" for more details.
     '''
 
-    def __init__(self, n_input, n_hid, feat_pairs, seed=0, scale=10, scale_inter=1, elm_alpha=0.0001, act='elu',
+    def __init__(self, n_input, n_hid, seed=0, scale=10, elm_alpha=0.0001, act='elu',
                  device='cpu'):
         '''
         Input parameters:
         - n_input: number of inputs/features (should be X.shape[1])
         - n_hid: number of hidden neurons for the base functions
-        - feat_pairs: List of feature pairs that should be used in the regressor.
         - seed: This number sets the seed for generating the random weights. It should
                 be different for each regressor
         - scale: the scale which is used to initialize the weights in the hidden layer of the
                  model. These weights are not changed throughout the optimization.
-        - scale_inter: scale of the interaction ELMs
         - elm_alpha: the regularization of the ridge regression.
         - act: the activation function in the model. can be 'elu', 'relu' or a torch activation function.
         - device: the device on which the regressor should train. can be 'cpu' or 'cuda'.
@@ -57,15 +55,10 @@ class ELM_Regressor():
         mask = torch.block_diag(*[torch.ones(n_hid)] * n_input).to(device)
         self.hidden_mat = self.hidden_list * mask
 
-        self.hidden_list_inter = [(torch.normal(mean=torch.zeros(1, n_hid), std=scale_inter).to(device),
-                                   torch.normal(mean=torch.zeros(1, n_hid), std=scale_inter).to(device)) for _ in
-                                  range(len(feat_pairs))]
         self.output_model = None
         self.n_input = n_input
         self.n_hid = n_hid
-        self.feat_pairs = feat_pairs
         self.scale = scale
-        self.scale_inter = scale_inter
         self.elm_alpha = elm_alpha
         if act == 'elu':
             self.act = torch.nn.ELU()
@@ -84,18 +77,6 @@ class ELM_Regressor():
         '''
         X_hid = X @ self.hidden_mat
         X_hid = self.act(X_hid)
-
-        X_hid_interactions = torch.zeros((X.shape[0], len(self.feat_pairs) * self.n_hid)).to(self.device)
-
-        for c, (i, j) in enumerate(self.feat_pairs):
-            x_in = X[:, i].unsqueeze(1)
-            x_in = x_in @ self.hidden_list_inter[c][0]
-            x_jn = X[:, j].unsqueeze(1)
-            x_jn = x_jn @ self.hidden_list_inter[c][1]
-
-            X_hid_interactions[:, c * self.n_hid: (c + 1) * self.n_hid] = self.act(x_in + x_jn)
-
-        X_hid = torch.hstack([X_hid, X_hid_interactions])
 
         return X_hid
 
@@ -129,29 +110,6 @@ class ELM_Regressor():
         out = x_in @ self.output_model.coef_[i * self.n_hid: (i + 1) * self.n_hid].unsqueeze(1)
         return out
 
-    def predict_single_inter(self, x1, x2, i):
-        '''
-        This function computes the partial output of one shape function for one feature pair.
-        Note, that the bias term is not used for this prediction.
-        Input parameters:
-        x1: vector representing the values which are used for the first feature
-        x2: vector representing the values which are used for the second feature
-        i: the index of the feature pair that should be used for the prediction
-        '''
-
-        x1 = x1.reshape(len(x1), 1)
-        x2 = x2.reshape(len(x2), 1)
-
-        x1 = x1 @ self.hidden_list_inter[i][0]
-        x2 = x2 @ self.hidden_list_inter[i][1]
-        x = self.act(x1 + x2)
-
-        starting_index = self.n_input * self.n_hid
-        out = x @ self.output_model.coef_[starting_index + i * self.n_hid:
-                                          starting_index + (i + 1) * self.n_hid].unsqueeze(1)
-
-        return out
-
     def fit(self, X, y, mult_coef):
         '''
         This function fits the ELM on the training data (X, y).
@@ -176,8 +134,8 @@ class IGANN:
     '''
 
     def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1,
-                 elm_scale=1, elm_scale_inter=0.5, elm_alpha=1, feat_select=None, interactions=0,
-                 act='elu', early_stopping=50, device='cpu', random_state=1, optimize_threshold=False, verbose=0):
+                 elm_scale=1, elm_alpha=1, feat_select=None, act='elu', early_stopping=50, device='cpu',
+                 random_state=1, optimize_threshold=False, verbose=0):
         '''
         Initializes the model. Input parameters:
         task: defines the task, can be 'regression' or 'classification'
@@ -186,10 +144,8 @@ class IGANN:
         boost_rate: Boosting rate.
         init_reg: the initial regularization strength for the linear model.
         elm_scale: the scale of the random weights in the elm model.
-        elm_scale_inter: the scale of the random weights for the interaction terms.
         elm_alpha: the regularization strength for the ridge regression in the ELM model.
         feat_select: Integer that says how many features should be selected
-        interactions: the number of interactions that should be fit.
         act: the activation function in the ELM model. Can be 'elu', 'relu' or a torch activation function.
         early_stopping: we use early stopping which means that we don't continue training more ELM
         models, if there has been no improvements for 'early_stopping' number of iterations.
@@ -202,14 +158,12 @@ class IGANN:
         self.task = task
         self.n_hid = n_hid
         self.elm_scale = elm_scale
-        self.elm_scale_inter = elm_scale_inter
         self.elm_alpha = elm_alpha
         self.init_reg = init_reg
         self.act = act
         self.n_estimators = n_estimators
         self.early_stopping = early_stopping
         self.feat_select = feat_select
-        self.interactions = interactions
         self.device = device
         self.random_state = random_state
         self.optimize_threshold = optimize_threshold
@@ -280,14 +234,13 @@ class IGANN:
         self.test_losses = []
         self.regressor_predictions = []
 
-    def fit(self, X, y, feat_pairs=None, fixed_feat=[],
+    def fit(self, X, y, fixed_feat=[],
             val_set=None, eval=None, plot_fixed_features=None):
         '''
         This function fits the model on training data (X, y).
         Parameters:
         X: the feature matrix
         y: the targets
-        feat_pairs: Given feature pairs
         fixed_feat: List of feature names which should definitely end up in the model
         val_set: can be tuple (X_val, y_val) for a defined validation set. If not set,
         it will be split from the training set randomly.
@@ -315,16 +268,6 @@ class IGANN:
             if torch.min(y) != -1:
                 self.target_remapped_flag = True
                 y = 2 * y - 1
-
-        if feat_pairs != None:
-            self.interactions = len(feat_pairs)
-
-        if self.feat_select != None and feat_pairs != None:
-            for fp in feat_pairs:
-                if fp[0] not in fixed_feat:
-                    fixed_feat.append(fp[0])
-                if fp[1] not in fixed_feat:
-                    fixed_feat.append(fp[1])
 
         if self.feat_select != None:
             feature_indizes = self._select_features(X, y)
@@ -387,31 +330,11 @@ class IGANN:
         if self.verbose >= 1:
             print('Train: {:.4f} Val: {:.4f} {}'.format(train_loss_init, val_loss_init, 'init'))
 
-        if self.interactions == 0:
-            self.feat_pairs = []
-        else:
-            hessian_train_sqrt = self._loss_sqrt_hessian(y, y_hat)
-            y_tilde = self._get_y_tilde(y, y_hat)
-
-            if feat_pairs != None:
-                self.feat_pairs = []
-                if type(feat_pairs[0][0]) == str:
-                    for fp in feat_pairs:
-                        fp_comb = (int(np.where(self.feature_names == fp[0])[0]),
-                                   int(np.where(self.feature_names == fp[1])[0]))
-                        self.feat_pairs.append(fp_comb)
-                else:
-                    self.feat_pairs = feat_pairs
-            else:
-                self.feat_pairs = self._find_interactions(X, y_tilde,
-                                                          torch.sqrt(torch.tensor(0.5)) * hessian_train_sqrt[:, None])
-
         X, y, y_hat, X_val, y_val, y_hat_val = X.to(self.device), y.to(self.device), y_hat.to(self.device), X_val.to(
             self.device), y_val.to(self.device), y_hat_val.to(self.device)
 
         self._run_optimization(X, y, y_hat, X_val, y_val, y_hat_val, eval,
-                               val_loss_init, plot_fixed_features,
-                               feat_pairs=self.feat_pairs)
+                               val_loss_init, plot_fixed_features)
 
         if self.task == 'classification' and self.optimize_threshold:
             self.best_threshold = self._optimize_classification_threshold(X, y)
@@ -419,10 +342,9 @@ class IGANN:
         return
 
     def _run_optimization(self, X, y, y_hat, X_val, y_val, y_hat_val, eval,
-                          best_loss, plot_fixed_features, feat_pairs=[]):
+                          best_loss, plot_fixed_features):
         '''
-        This function runs the optimization for ELMs with single features or ELMs with
-        pairs of features (interactions). This function should not be called from outside.
+        This function runs the optimization for ELMs with single features. This function should not be called from outside.
         Parameters:
         X: the training feature matrix
         y: the training targets
@@ -434,7 +356,6 @@ class IGANN:
         best_loss: best previous loss achieved. This is to keep track of the overall best sequence of ELMs.
         plot_fixed_features: Per default the most important features are plotted for verbose=2.
         This can be changed here to keep track of the same feature throughout training.
-        feat_pairs: list of feature pairs to fit interactions
         '''
 
         counter_no_progress = 0
@@ -447,8 +368,8 @@ class IGANN:
 
             # Init ELM
             regressor = ELM_Regressor(n_input=X.shape[1], n_hid=self.n_hid,
-                                      feat_pairs=feat_pairs, seed=counter, scale=self.elm_scale,
-                                      scale_inter=self.elm_scale_inter, elm_alpha=self.elm_alpha,
+                                      seed=counter, scale=self.elm_scale,
+                                      elm_alpha=self.elm_alpha,
                                       act=self.act, device=self.device)
 
             # Fit ELM regressor
@@ -502,8 +423,6 @@ class IGANN:
                         self.plot_single(plot_by_list=plot_fixed_features)
                     else:
                         self.plot_single()
-                        if len(self.feat_pairs) > 0:
-                            self.plot_interactions()
 
         if self.early_stopping > 0:
             # We remove the ELMs that did not improve the performance. Most likely best_iter equals self.early_stopping.
@@ -516,7 +435,7 @@ class IGANN:
 
     def _select_features(self, X, y):
         regressor = ELM_Regressor(X.shape[1], self.n_hid, [],
-                                  scale=self.elm_scale, scale_inter=self.elm_scale_inter, act=self.act, device='cpu')
+                                  scale=self.elm_scale, act=self.act, device='cpu')
         X_tilde = regressor.get_hidden_values(X)
 
         lower_bound = 1e-10
@@ -551,77 +470,6 @@ class IGANN:
                 print(f'Found features {features}')
 
         return features
-
-    def _find_interactions(self, X, y, mult_coef):
-        '''
-        This function finds the most promising pair of features for predicting y. It does so
-        by generating a large hidden layer consisting of hidden layers of ELMs, where each ELM
-        is getting two inputs. Then, we train Lasso models with varying regularization strength,
-        until all coefficients are zero except for 'ELM block' coefficients. Thereby the number
-        of ELM blocks must be equal to the input parameter self.interactions.
-        This function should not be called from outside.
-        '''
-        if len(X) > 10000:
-            sample = np.random.choice(np.arange(len(X)), size=10000, replace=False)
-            X = X[sample]
-            y = y[sample]
-            if self.task == 'classification':
-                mult_coef = mult_coef[sample]
-
-        regressor = ELM_Regressor(X.shape[1], self.n_hid,
-                                  [(i, j) for i in range(X.shape[1]) for j in range(X.shape[1])],
-                                  scale=self.elm_scale, scale_inter=self.elm_scale_inter, act=self.act, device='cpu')
-        X_tilde = regressor.get_hidden_values(X)
-        X_tilde_tilde = X_tilde * mult_coef
-
-        lower_bound = 1e-10
-        upper_bound = 1000
-        alpha = (lower_bound + upper_bound) / 2
-        found = False
-        for _ in range(1000):
-            lasso = Lasso(alpha=alpha, random_state=self.random_state)
-            lasso.fit(X_tilde_tilde, y)
-            feat_pairs = self._get_nonzero_feat_pairs(lasso.coef_[self.n_hid * X.shape[1]:], X)
-            if len(feat_pairs) == self.interactions:
-                found = True
-                break
-            elif len(feat_pairs) < self.interactions:
-                upper_bound = alpha
-                alpha = (lower_bound + upper_bound) / 2
-            else:
-                lower_bound = alpha
-                alpha = (lower_bound + upper_bound) / 2
-
-        if not found:
-            warnings.warn('Did not find wanted number of interactions!!!!')
-            warnings.warn(f'Using interactions {feat_pairs}')
-
-        else:
-            if self.verbose > 0:
-                print(f'Found interactions {feat_pairs}')
-
-        return feat_pairs
-
-    def _get_nonzero_feat_pairs(self, coef, X):
-        '''
-        This function computes how many ELM blocks are corresponding to coefficients != 0.
-        It then returns all feature pairs that correspond to these ELM blocks.
-        '''
-        feat_pairs = []
-        for pos in np.where(coef != 0)[0]:
-            block = int((pos - (pos % self.n_hid)) / self.n_hid)
-            corr_i_feat = int(block / X.shape[1])
-            corr_j_feat = block % X.shape[1]
-            if corr_i_feat == corr_j_feat:
-                continue
-            if corr_i_feat < corr_j_feat:
-                if (corr_i_feat, corr_j_feat) not in feat_pairs:
-                    feat_pairs.append((corr_i_feat, corr_j_feat))
-            else:
-                if (corr_j_feat, corr_i_feat) not in feat_pairs:
-                    feat_pairs.append((corr_j_feat, corr_i_feat))
-
-        return feat_pairs
 
     def _print_results(self, counter, counter_no_progress, eval, boost_rate, train_loss, val_loss):
         '''
@@ -827,54 +675,6 @@ class IGANN:
                 axs[1][i].get_yaxis().set_visible(False)
         plt.show()
 
-    def plot_interactions(self, scaler_dict=None):
-        """
-        scaler_dict: dictionary that maps every numerical feature to the respective (sklearn) scaler.
-                     scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not Non
-        """
-        plt.close(fig="Interactions")
-        fig_inter, axs_inter = plt.subplots(1, len(self.feat_pairs), figsize=(int(6 * len(self.feat_pairs)), 4),
-                                            num="Interactions")  # 1,
-        plt.subplots_adjust(wspace=0.2)
-
-        for i, fp in enumerate(self.feat_pairs):
-            x1 = torch.linspace(self.unique[fp[0]].min(), self.unique[fp[0]].max(), 50).to(self.device)
-            x2 = torch.linspace(self.unique[fp[1]].min(), self.unique[fp[1]].max(), 50).to(self.device)
-            pred = torch.zeros((len(x1), len(x2)))
-            for v in range(pred.shape[0]):
-                x1_stat = x1[v] * torch.ones(len(x2)).to(self.device)
-                for regressor, boost_rate in zip(self.regressors,
-                                                 self.boosting_rates):
-                    pred[v, :] += boost_rate * regressor.predict_single_inter(x1_stat, x2, i).cpu().squeeze()
-
-            if scaler_dict:
-                x1 = scaler_dict[self.feature_names[fp[0]]].inverse_transform(x1.cpu().reshape(-1, 1)).squeeze()
-                x2 = scaler_dict[self.feature_names[fp[1]]].inverse_transform(x2.cpu().reshape(-1, 1)).squeeze()
-
-            if len(self.feat_pairs) == 1:
-                plot_object = axs_inter.pcolormesh(x1.cpu(), x2.cpu(), pred, shading='nearest')
-                fig_inter.colorbar(plot_object, ax=axs_inter)
-                axs_inter.set_title('Min: {:.2f}, Max: {:.2f}'.format(torch.min(pred), torch.max(pred)))
-                axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
-                axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
-
-                # self.axs_inter.set_aspect('equal', 'box')
-                axs_inter.set_aspect('auto', 'box')
-                fig_inter.tight_layout()
-                plt.show()
-            else:
-                plot_object = axs_inter[i].pcolormesh(x1, x2, pred, shading='nearest')
-                fig_inter.colorbar(plot_object, ax=axs_inter[i])
-                axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f}'.format(np.min(pred), np.max(pred)))
-                axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
-                axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
-
-                # self.axs_inter[i].set_aspect('equal', 'box')
-                axs_inter[i].set_aspect('auto', 'box')
-
-        fig_inter.tight_layout()
-        plt.show()
-
     def plot_learning(self):
         '''
         Plot the training and the validation losses over time (i.e., for the sequence of learned
@@ -904,7 +704,7 @@ if __name__ == '__main__':
     sns.scatterplot(data=df, x='x1', y='x2', hue='label')
     df['x1'] = 1 * (df.x1 > 0)
 
-    m = IGANN(n_estimators=100, n_hid=10, elm_alpha=5, boost_rate=1, interactions=1, verbose=2)
+    m = IGANN(n_estimators=100, n_hid=10, elm_alpha=5, boost_rate=1, verbose=2)
     start = time.time()
 
     inputs = df[['x1', 'x2']]
