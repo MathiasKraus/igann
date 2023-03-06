@@ -437,10 +437,10 @@ class IGANN:
         groups = np.array([np.ones(self.n_hid) * i + 1 for i in range(X.shape[1])]).flatten()
 
         if self.task == 'classification':
-            m = abess.linear.LogisticRegression(path_type='gs', cv=3, s_max=self.sparse, thread=0)
+            m = abess.linear.LogisticRegression(path_type='gs', cv=3, s_min=1, s_max=self.sparse, thread=0)
             m.fit(X_tilde.numpy(), np.where(y.numpy() == -1, 0, 1), group=groups)
         else:
-            m = abess.linear.LinearRegression(path_type='gs', cv=3, s_max=self.sparse, thread=0)
+            m = abess.linear.LinearRegression(path_type='gs', cv=3, s_min=1, s_max=self.sparse, thread=0)
             m.fit(X_tilde.numpy(), y, group=groups)
         
         active_features = np.where(np.sum(m.coef_.reshape(-1, self.n_hid), axis=1) != 0)[0]
@@ -670,7 +670,7 @@ class IGANN:
 
 if __name__ == '__main__':
     from sklearn.datasets import make_circles, make_regression
-    
+    '''
     X_small, y_small = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.3)
     X_large, y_large = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.7)
 
@@ -697,10 +697,13 @@ if __name__ == '__main__':
     m.plot_single(show_n=7)
 
     m.predict(inputs)
-    
-    X, y = make_regression(100000, 10, n_informative=3)
+    '''
+    X, y = make_regression(100000, 1000, n_informative=3)
     y = (y - y.mean()) / y.std()
-    m = IGANN(task='regression', sparse=5, verbose=2)
+    start = time.time()
+    m = IGANN(task='regression', n_estimators=1, sparse=5, verbose=2)
     m.fit(X, y)
+    end = time.time()
+    print(end - start)
     m.plot_learning()
     m.plot_single()
