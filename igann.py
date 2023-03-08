@@ -1,6 +1,7 @@
 import time
 import torch
 import warnings
+from copy import deepcopy
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression, Lasso
@@ -32,11 +33,12 @@ class ELM_Regressor():
     regression (Ridge Regression), see "Extreme Learning Machines" for more details.
     '''
 
-    def __init__(self, n_input, n_hid, seed=0, scale=10, elm_alpha=0.0001, act='elu',
-                 device='cpu'):
+    def __init__(self, n_input, n_categorical_cols, n_hid, seed=0, scale=10, 
+                 elm_alpha=0.0001, act='elu', device='cpu'):
         '''
         Input parameters:
         - n_input: number of inputs/features (should be X.shape[1])
+        - n_cat_cols: number of categorically encoded features
         - n_hid: number of hidden neurons for the base functions
         - seed: This number sets the seed for generating the random weights. It should
                 be different for each regressor
@@ -49,14 +51,17 @@ class ELM_Regressor():
         super().__init__()
         np.random.seed(seed)
         torch.manual_seed(seed)
+        self.n_numerical_cols = n_input - n_categorical_cols
+        self.n_categorical_cols = n_categorical_cols
         # The following are the random weights in the model which are not optimized.
-        self.hidden_list = torch.normal(mean=torch.zeros(n_input, n_input * n_hid), std=scale).to(device)
+        self.hidden_list = torch.normal(mean=torch.zeros(self.n_numerical_cols, 
+                                                         self.n_numerical_cols * n_hid), std=scale).to(device)
 
-        mask = torch.block_diag(*[torch.ones(n_hid)] * n_input).to(device)
+        mask = torch.block_diag(*[torch.ones(n_hid)] * self.n_numerical_cols).to(device)
         self.hidden_mat = self.hidden_list * mask
-
         self.output_model = None
         self.n_input = n_input
+        
         self.n_hid = n_hid
         self.scale = scale
         self.elm_alpha = elm_alpha
@@ -75,8 +80,9 @@ class ELM_Regressor():
         from hidden_list. After applying the activation function, we return the result
         in X_hid
         '''
-        X_hid = X @ self.hidden_mat
+        X_hid = X[:,:self.n_numerical_cols] @ self.hidden_mat
         X_hid = self.act(X_hid)
+        X_hid = torch.hstack((X_hid, X[:,self.n_numerical_cols:]))
 
         return X_hid
 
@@ -105,9 +111,15 @@ class ELM_Regressor():
 
         # See self.predict for the description - it's almost equivalent.
         x_in = x.reshape(len(x), 1)
-        x_in = x_in @ self.hidden_mat[i, i * self.n_hid:(i + 1) * self.n_hid].unsqueeze(0)
-        x_in = self.act(x_in)
-        out = x_in @ self.output_model.coef_[i * self.n_hid: (i + 1) * self.n_hid].unsqueeze(1)
+        if i < self.n_numerical_cols:
+            # numerical feature
+            x_in = x_in @ self.hidden_mat[i, i * self.n_hid:(i + 1) * self.n_hid].unsqueeze(0)
+            x_in = self.act(x_in)
+            out = x_in @ self.output_model.coef_[i * self.n_hid: (i + 1) * self.n_hid].unsqueeze(1)
+        else:
+            # categorical feature
+            start_idx = self.n_numerical_cols * self.n_hid + (i - self.n_numerical_cols)
+            out = x_in @ self.output_model.coef_[start_idx: start_idx + 1].unsqueeze(1)
         return out
 
     def fit(self, X, y, mult_coef):
@@ -191,7 +203,7 @@ class IGANN:
             self.init_classifier = Lasso(alpha=self.init_reg)
             self.criterion = torch.nn.MSELoss()
         else:
-            print('Task not implemented. Can be classification or regression')
+            warnings.warn('Task not implemented. Can be classification or regression')
 
     def _clip_p(self, p):
         if torch.max(p) > 100 or torch.min(p) < -100:
@@ -249,16 +261,43 @@ class IGANN:
 
         self._reset_state()
 
-        if type(X) == pd.DataFrame:
-            self.feature_names = X.columns
-            X = X.values
-        else:
-            self.feature_names = np.arange(X.shape[1]).astype(str)
+        if type(X) != pd.DataFrame:
+            warnings.warn('Please provide a pandas dataframe as input for X, as IGANN derives the categorical/numerical variables from the datatypes. We stop here for now.')
+            return
+
+        X.columns = [str(c) for c in X.columns]
+        self.categorical_cols = X.select_dtypes(include=['category', 'object']).columns.tolist()
+        self.numerical_cols = list(set(X.columns) - set(self.categorical_cols))
 
         if type(y) == pd.Series:
             y = y.values
 
-        X = torch.from_numpy(X).float()
+        if len(self.numerical_cols) > 0:
+            X_num = torch.from_numpy(X[self.numerical_cols].values).float()
+            self.n_numerical_cols = X_num.shape[1]
+        else:
+            self.n_numerical_cols = 0
+
+        if len(self.categorical_cols) > 0:
+            one_hot_encoded = pd.get_dummies(X[self.categorical_cols], drop_first=True)
+            encoded_list = [[c for c in one_hot_encoded.columns if c.startswith(f)] for f in self.categorical_cols]
+            original_list = [[self.categorical_cols[i]] * len(encoded_list[i]) for i in range(len(encoded_list))]
+
+            self.dummy_encodings = dict(zip(self._flatten(encoded_list), self._flatten(original_list)))
+            X_cat = torch.from_numpy(one_hot_encoded.values).float()
+            self.n_categorical_cols = X_cat.shape[1]
+            self.feature_names = self.numerical_cols + list(one_hot_encoded.columns)
+        else:
+            self.n_categorical_cols = 0
+            self.feature_names = self.numerical_cols
+
+        if len(self.numerical_cols) > 0 and len(self.categorical_cols) > 0:
+            X = torch.hstack((X_num, X_cat))
+        elif len(self.numerical_cols) > 0:
+            X = X_num
+        else:
+            X = X_cat
+
         y = torch.from_numpy(y.squeeze()).float()
 
         if self.task == 'classification':
@@ -267,6 +306,7 @@ class IGANN:
                 self.target_remapped_flag = True
                 y = 2 * y - 1
 
+        #TODO for num/cat separate grouping
         if self.sparse > 0:
             feature_indizes = self._select_features(X, y)
             self.feature_names = np.array([f for e, f in enumerate(self.feature_names) if e in feature_indizes])
@@ -313,7 +353,7 @@ class IGANN:
         # Store some information about the dataset which we later use for plotting.
         self.X_min = list(X.min(axis=0))
         self.X_max = list(X.max(axis=0))
-        self.unique = [torch.unique(X[:, i]) for i in torch.arange(X.shape[1])]
+        self.unique = [torch.unique(X[:, i]) for i in range(X.shape[1])]
         self.hist = [torch.histogram(X[:, i]) for i in range(X.shape[1])]
 
         if self.verbose >= 1:
@@ -364,10 +404,14 @@ class IGANN:
             y_tilde = torch.sqrt(torch.tensor(0.5).to(self.device)) * self._get_y_tilde(y, y_hat)
 
             # Init ELM
-            regressor = ELM_Regressor(n_input=X.shape[1], n_hid=self.n_hid,
-                                      seed=counter, scale=self.elm_scale,
+            regressor = ELM_Regressor(n_input=X.shape[1], 
+                                      n_categorical_cols=self.n_categorical_cols, 
+                                      n_hid=self.n_hid,
+                                      seed=counter, 
+                                      scale=self.elm_scale,
                                       elm_alpha=self.elm_alpha,
-                                      act=self.act, device=self.device)
+                                      act=self.act, 
+                                      device=self.device)
 
             # Fit ELM regressor
             X_hid = regressor.fit(X, y_tilde,
@@ -560,30 +604,68 @@ class IGANN:
 
         return pred
 
+    def _flatten(self, l):
+        return [item for sublist in l for item in sublist]
+
     def _split_long_titles(self, l):
         return '\n'.join(l[p:p + 22] for p in range(0, len(l), 22))
 
-    def get_shape_functions_as_dict(self):
-        feature_effects = []
-        for i, feat_name in enumerate(self.feature_names):
-            feat_values = self.unique[i]
-            if self.task == 'classification':
-                pred = self.init_classifier.coef_[0, i] * feat_values
-            else:
-                pred = self.init_classifier.coef_[i] * feat_values
-            feat_values = feat_values.to(self.device)
-            for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
-                pred += (boost_rate * regressor.predict_single(feat_values.reshape(-1, 1), i).squeeze()).cpu()
-            feature_effects.append(
-                {'name': feat_name, 'x': feat_values.cpu(),
-                 'y': pred, 'avg_effect': torch.mean(torch.abs(pred)),
-                 'hist': self.hist[i]})
+    def _get_pred_of_i(self, i):
+        feat_values = self.unique[i]
+        if self.task == 'classification':
+            pred = self.init_classifier.coef_[0, i] * feat_values
+        else:
+            pred = self.init_classifier.coef_[i] * feat_values
+        feat_values = feat_values.to(self.device)
+        for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
+            pred += (boost_rate * regressor.predict_single(feat_values.reshape(-1, 1), i).squeeze()).cpu()
+        return feat_values, pred
 
-        overall_effect = np.sum([d['avg_effect'] for d in feature_effects])
-        for d in feature_effects:
+    def _compress_shape_functions_dict(self, shape_functions):
+        shape_functions_compressed = {}
+        for sf in shape_functions:
+            if sf['name'] in shape_functions_compressed.keys():
+                shape_functions_compressed[sf['name']]['x'].extend(sf['x'])
+                shape_functions_compressed[sf['name']]['y'].extend(sf['y'])
+                shape_functions_compressed[sf['name']]['avg_effect'] += sf['avg_effect']
+                shape_functions_compressed[sf['name']]['hist'][0].append(sf['hist'][0])
+                shape_functions_compressed[sf['name']]['hist'][1].append(
+                    shape_functions_compressed[sf['name']]['hist'][1][-1] + 1
+                )
+            else:
+                shape_functions_compressed[sf['name']] = deepcopy(sf)
+        
+        return [v for k, v in shape_functions_compressed.items()]
+
+    def get_shape_functions_as_dict(self):
+        shape_functions = []
+        for i, feat_name in enumerate(self.feature_names):
+            datatype = 'numerical' if i < self.n_numerical_cols else 'categorical'
+            feat_values, pred = self._get_pred_of_i(i)
+            if datatype == 'numerical':
+                shape_functions.append(
+                    {'name': feat_name, 
+                    'datatype': datatype,
+                    'x': feat_values.cpu().numpy(),
+                    'y': pred.numpy(), 
+                    'avg_effect': float(torch.mean(torch.abs(pred))),
+                    'hist': self.hist[i]})
+            else:
+                shape_functions.append(
+                    {'name': self.dummy_encodings[feat_name], 
+                    'datatype': datatype,
+                    'x': [''.join(feat_name.split('_')[1:])],
+                    'y': [pred.numpy()[1]], 
+                    'avg_effect': float(torch.mean(torch.abs(pred))),
+                    'hist': [[self.hist[i][0][-1]], [0]]})
+
+        overall_effect = np.sum([d['avg_effect'] for d in shape_functions])
+        for d in shape_functions:
             d['avg_effect'] = d['avg_effect'] / overall_effect * 100
 
-        return feature_effects
+        shape_functions = self._compress_shape_functions_dict(shape_functions)
+
+        return shape_functions
 
     def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None):
         '''
@@ -593,12 +675,12 @@ class IGANN:
         scaler_dict: dictionary that maps every numerical feature to the respective (sklearn) scaler.
                      scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not None
         '''
-        feature_effects = self.get_shape_functions_as_dict()
+        shape_functions = self.get_shape_functions_as_dict()
         if plot_by_list is None:
-            top_k = [d for d in sorted(feature_effects, reverse=True, key=lambda x: x['avg_effect'])][:show_n]
+            top_k = [d for d in sorted(shape_functions, reverse=True, key=lambda x: x['avg_effect'])][:show_n]
             show_n = min(show_n, len(top_k))
         else:
-            top_k = [d for d in sorted(feature_effects, reverse=True, key=lambda x: x['avg_effect'])]
+            top_k = [d for d in sorted(shape_functions, reverse=True, key=lambda x: x['avg_effect'])]
             show_n = len(plot_by_list)
 
         plt.close(fig="Shape functions")
@@ -613,30 +695,30 @@ class IGANN:
                 continue
             if scaler_dict:
                 d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
-            if len(d['x']) < 4:
+            if d['datatype'] == 'categorical':
                 if show_n == 1:
-                    sns.barplot(x=d['x'].numpy(), y=d['y'].numpy(), color="darkblue", ax=axs[0])
-                    axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                    sns.barplot(x=d['x'], y=d['y'], color="darkblue", ax=axs[0])
+                    axs[1].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
                     axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                            d['avg_effect']))
                     axs[0].grid()
                 else:
-                    sns.barplot(x=d['x'].numpy(), y=d['y'].numpy(), color="darkblue", ax=axs[0][i])
-                    axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                    sns.barplot(x=d['x'], y=d['y'], color="darkblue", ax=axs[0][i])
+                    axs[1][i].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
                     axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                               d['avg_effect']))
                     axs[0][i].grid()
 
             else:
                 if show_n == 1:
-                    g = sns.lineplot(x=d['x'].numpy(), y=d['y'].numpy(), ax=axs[0], linewidth=2, color="darkblue")
+                    g = sns.lineplot(x=d['x'], y=d['y'], ax=axs[0], linewidth=2, color="darkblue")
                     g.axhline(y=0, color="grey", linestyle="--")
                     axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                     axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                            d['avg_effect']))
                     axs[0].grid()
                 else:
-                    g = sns.lineplot(x=d['x'].numpy(), y=d['y'].numpy(), ax=axs[0][i], linewidth=2, color="darkblue")
+                    g = sns.lineplot(x=d['x'], y=d['y'], ax=axs[0][i], linewidth=2, color="darkblue")
                     g.axhline(y=0, color="grey", linestyle="--")
                     axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                     axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
@@ -697,7 +779,7 @@ if __name__ == '__main__':
     m.plot_single(show_n=7)
 
     m.predict(inputs)
-    '''
+    
     X, y = make_regression(100000, 10, n_informative=3)
     y = (y - y.mean()) / y.std()
     start = time.time()
@@ -707,3 +789,14 @@ if __name__ == '__main__':
     print(end - start)
     m.plot_learning()
     m.plot_single()
+    '''
+
+    X, y = make_regression(10000, 2, n_informative=2)
+    y = (y - y.mean()) / y.std()
+    X = pd.DataFrame(X)
+    X['categorical'] = np.random.choice(['a', 'b', 'c', 'd'], size=len(X), p=[0.1, 0.2, 0.5, 0.2])
+    X['categorical2'] = np.random.choice(['q', 'b', 'c', 'd'], size=len(X), p=[0.1, 0.2, 0.5, 0.2])
+    print(X.dtypes)
+    m = IGANN(task='regression', n_estimators=100, sparse=0, verbose=2)
+    m.fit(X, y)
+
