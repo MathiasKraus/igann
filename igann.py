@@ -7,9 +7,12 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression, Lasso
 from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeRegressor
 import matplotlib.pyplot as plt
 import seaborn as sns
 import abess.linear
+
+warnings.simplefilter('once', UserWarning)
 
 class torch_Ridge():
     def __init__(self, alpha, device):
@@ -21,7 +24,7 @@ class torch_Ridge():
         self.coef_ = torch.linalg.solve(X.T @ X + self.alpha * torch.eye(X.shape[1]).to(self.device), X.T @ y)
 
     def predict(self, X):
-        return torch.dot(X.to(self.device), self.coef_)
+        return X.to(self.device) @ self.coef_
 
 
 class ELM_Regressor():
@@ -133,6 +136,33 @@ class ELM_Regressor():
         m.fit(X_hid_mult, y)
         self.output_model = m
         return X_hid
+
+
+class DT_Regressor():
+    def __init__(self, seed=0):
+        super().__init__()
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        self.split_i = None
+
+    def predict(self, X, hidden=False):
+        return self.predict_single(X[:, self.split_i], self.split_i)
+
+    def predict_single(self, x, i):
+        t = self.output_model.tree_
+        x_in = x.reshape(len(x), 1)
+        if self.split_i == i:
+            out = float(t.value[1]) * (x_in <= t.threshold[0]) + float(t.value[0]) * (x_in > t.threshold[0])
+            return out
+        else:
+            return 0 * x_in
+
+    def fit(self, X, y, mult_coef):
+        m = DecisionTreeRegressor(max_depth=1)
+        m.fit(X.numpy(), y.numpy())
+        self.output_model = m
+        self.split_i = self.output_model.tree_.feature[0]
+        return
 
 
 class IGANN:
@@ -310,7 +340,6 @@ class IGANN:
                 self.target_remapped_flag = True
                 y = 2 * y - 1
         
-        #TODO for num/cat separate grouping
         if self.sparse > 0:
             feature_indizes = self._select_features(X, y)
             self.feature_names = np.array([f for e, f in enumerate(self.feature_names) if e in feature_indizes])
@@ -375,7 +404,7 @@ class IGANN:
             self.device), y_val.to(self.device), y_hat_val.to(self.device)
 
         self._run_optimization(X, y, y_hat, X_val, y_val, y_hat_val, eval,
-                               val_loss_init, plot_fixed_features)
+                                            val_loss_init, plot_fixed_features)
 
         if self.task == 'classification' and self.optimize_threshold:
             self.best_threshold = self._optimize_classification_threshold(X, y)
@@ -406,26 +435,26 @@ class IGANN:
         for counter in range(self.n_estimators):
             hessian_train_sqrt = self._loss_sqrt_hessian(y, y_hat)
             y_tilde = torch.sqrt(torch.tensor(0.5).to(self.device)) * self._get_y_tilde(y, y_hat)
-
+            
             # Init ELM
             regressor = ELM_Regressor(n_input=X.shape[1], 
-                                      n_categorical_cols=self.n_categorical_cols, 
-                                      n_hid=self.n_hid,
-                                      seed=counter, 
-                                      scale=self.elm_scale,
-                                      elm_alpha=self.elm_alpha,
-                                      act=self.act, 
-                                      device=self.device)
-
+                                    n_categorical_cols=self.n_categorical_cols, 
+                                    n_hid=self.n_hid,
+                                    seed=counter, 
+                                    scale=self.elm_scale,
+                                    elm_alpha=self.elm_alpha,
+                                    act=self.act, 
+                                    device=self.device)
+            
             # Fit ELM regressor
             X_hid = regressor.fit(X, y_tilde,
-                                  torch.sqrt(torch.tensor(0.5).to(self.device)) * self.boost_rate * hessian_train_sqrt[
+                                torch.sqrt(torch.tensor(0.5).to(self.device)) * self.boost_rate * hessian_train_sqrt[
                                                                                                     :, None])
 
             # Make a prediction of the ELM for the update of y_hat
             train_regressor_pred = regressor.predict(X_hid, hidden=True).squeeze()
             val_regressor_pred = regressor.predict(X_val).squeeze()
-
+            
             self.regressor_predictions.append(train_regressor_pred)
 
             # Update the prediction for training and validation data
@@ -772,7 +801,7 @@ class IGANN:
 
 if __name__ == '__main__':
     from sklearn.datasets import make_circles, make_regression
-    '''
+    
     X_small, y_small = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.3)
     X_large, y_large = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.7)
 
@@ -799,17 +828,20 @@ if __name__ == '__main__':
     m.plot_single(show_n=7)
 
     m.predict(inputs)
-    
+
+    ######
+    '''
     X, y = make_regression(100000, 10, n_informative=3)
     y = (y - y.mean()) / y.std()
     start = time.time()
     m = IGANN(task='regression', n_estimators=1, sparse=5, verbose=2)
-    m.fit(X, y)
+    m.fit(pd.DataFrame(X), y)
     end = time.time()
     print(end - start)
     m.plot_learning()
     m.plot_single()
-    '''
+    
+    #####
 
     X, y = make_regression(10000, 2, n_informative=2)
     y = (y - y.mean()) / y.std()
@@ -817,6 +849,14 @@ if __name__ == '__main__':
     X['categorical'] = np.random.choice(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], size=len(X))
     X['categorical2'] = np.random.choice(['q', 'b', 'c', 'd'], size=len(X), p=[0.1, 0.2, 0.5, 0.2])
     print(X.dtypes)
-    m = IGANN(task='regression', n_estimators=10, sparse=3, verbose=2)
+    m = IGANN(task='regression', n_estimators=100, sparse=0, verbose=2)
     m.fit(X, y)
+
+    from Benchmark import FiveFoldBenchmark
+    m = IGANN(n_estimators=0, n_hid=10, elm_alpha=5, boost_rate=1.0, sparse=0, verbose=2)
+    #m = LogisticRegression()
+    benchmark = FiveFoldBenchmark(model=m)
+    folds_auroc = benchmark.run_model_on_dataset(dataset_id=1)
+    print(np.mean(folds_auroc))
+    '''
 
