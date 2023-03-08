@@ -698,7 +698,7 @@ if __name__ == '__main__':
 
     m.predict(inputs)
     '''
-    X, y = make_regression(100000, 1000, n_informative=3)
+    X, y = make_regression(100000, 10, n_informative=3)
     y = (y - y.mean()) / y.std()
     start = time.time()
     m = IGANN(task='regression', n_estimators=1, sparse=5, verbose=2)
