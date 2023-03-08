@@ -1,0 +1,8 @@
+d_id;model;;mean_auroc;std_auroc
+d_id;model;;mean_auroc;std_auroc
+d_id;model;;mean_auroc;std_auroc
+d_id;model;;mean_auroc;std_auroc
+d_id;model;;mean_auroc;std_auroc
+d_id;model;;mean_auroc;std_auroc
+d_id;model;;mean_auroc;std_auroc
+d_id;model;;mean_auroc;std_auroc
