@@ -266,34 +266,38 @@ class IGANN:
             return
 
         X.columns = [str(c) for c in X.columns]
-        self.categorical_cols = X.select_dtypes(include=['category', 'object']).columns.tolist()
-        self.numerical_cols = list(set(X.columns) - set(self.categorical_cols))
+        categorical_cols = X.select_dtypes(include=['category', 'object']).columns.tolist()
+        numerical_cols = list(set(X.columns) - set(categorical_cols))
 
         if type(y) == pd.Series:
             y = y.values
 
-        if len(self.numerical_cols) > 0:
-            X_num = torch.from_numpy(X[self.numerical_cols].values).float()
+        if len(numerical_cols) > 0:
+            X_num = torch.from_numpy(X[numerical_cols].values).float()
             self.n_numerical_cols = X_num.shape[1]
         else:
             self.n_numerical_cols = 0
 
-        if len(self.categorical_cols) > 0:
-            one_hot_encoded = pd.get_dummies(X[self.categorical_cols], drop_first=True)
-            encoded_list = [[c for c in one_hot_encoded.columns if c.startswith(f)] for f in self.categorical_cols]
-            original_list = [[self.categorical_cols[i]] * len(encoded_list[i]) for i in range(len(encoded_list))]
+        if len(categorical_cols) > 0:
+            one_hot_encoded = pd.get_dummies(X[categorical_cols], drop_first=True)
+            encoded_list = [[c for c in one_hot_encoded.columns if c.startswith(f)] for f in categorical_cols]
+            original_list = [[categorical_cols[i]] * len(encoded_list[i]) for i in range(len(encoded_list))]
 
             self.dummy_encodings = dict(zip(self._flatten(encoded_list), self._flatten(original_list)))
             X_cat = torch.from_numpy(one_hot_encoded.values).float()
             self.n_categorical_cols = X_cat.shape[1]
-            self.feature_names = self.numerical_cols + list(one_hot_encoded.columns)
+            self.feature_names = numerical_cols + list(one_hot_encoded.columns)
         else:
             self.n_categorical_cols = 0
-            self.feature_names = self.numerical_cols
+            self.feature_names = numerical_cols
 
-        if len(self.numerical_cols) > 0 and len(self.categorical_cols) > 0:
+        if self.sparse > self.n_numerical_cols + self.n_categorical_cols:
+            warnings.warn('The parameter sparse is higher than the number of features')
+            self.sparse = self.n_numerical_cols + self.n_categorical_cols
+
+        if self.n_numerical_cols > 0 and self.n_categorical_cols > 0:
             X = torch.hstack((X_num, X_cat))
-        elif len(self.numerical_cols) > 0:
+        elif self.n_numerical_cols > 0:
             X = X_num
         else:
             X = X_cat
@@ -305,7 +309,7 @@ class IGANN:
             if torch.min(y) != -1:
                 self.target_remapped_flag = True
                 y = 2 * y - 1
-
+        
         #TODO for num/cat separate grouping
         if self.sparse > 0:
             feature_indizes = self._select_features(X, y)
@@ -475,19 +479,35 @@ class IGANN:
         return best_loss
 
     def _select_features(self, X, y):
-        regressor = ELM_Regressor(X.shape[1], self.n_hid, seed=0,
+        regressor = ELM_Regressor(X.shape[1], self.n_categorical_cols, self.n_hid, seed=0,
                                   scale=self.elm_scale, act=self.act, device='cpu')
         X_tilde = regressor.get_hidden_values(X)
-        groups = np.array([np.ones(self.n_hid) * i + 1 for i in range(X.shape[1])]).flatten()
+        groups = self._flatten([list(np.ones(self.n_hid) * i + 1) for i in range(self.n_numerical_cols)])
+        groups.extend(list(range(self.n_numerical_cols, X.shape[1])))
 
         if self.task == 'classification':
-            m = abess.linear.LogisticRegression(path_type='gs', cv=3, s_min=1, s_max=self.sparse, thread=0)
+            m = abess.linear.LogisticRegression(path_type='gs', 
+                                                cv=3, 
+                                                s_min=1, 
+                                                s_max=self.sparse, 
+                                                thread=0)
             m.fit(X_tilde.numpy(), np.where(y.numpy() == -1, 0, 1), group=groups)
         else:
-            m = abess.linear.LinearRegression(path_type='gs', cv=3, s_min=1, s_max=self.sparse, thread=0)
+            m = abess.linear.LinearRegression(path_type='gs', 
+                                              cv=3, 
+                                              s_min=1, 
+                                              s_max=self.sparse, 
+                                              thread=0)
             m.fit(X_tilde.numpy(), y, group=groups)
-        
-        active_features = np.where(np.sum(m.coef_.reshape(-1, self.n_hid), axis=1) != 0)[0]
+
+        active_num_features = np.where(np.sum(m.coef_[:self.n_numerical_cols * self.n_hid].reshape(-1, self.n_hid), axis=1) != 0)[0]
+
+        active_cat_features = np.where(m.coef_[self.n_numerical_cols * self.n_hid:] != 0)[0] + self.n_numerical_cols
+
+        self.n_numerical_cols = len(active_num_features)
+        self.n_categorical_cols = len(active_cat_features)
+
+        active_features = list(active_num_features) + list(active_cat_features)
 
         if self.verbose > 0:
             print(f'Found features {active_features}')
@@ -794,9 +814,9 @@ if __name__ == '__main__':
     X, y = make_regression(10000, 2, n_informative=2)
     y = (y - y.mean()) / y.std()
     X = pd.DataFrame(X)
-    X['categorical'] = np.random.choice(['a', 'b', 'c', 'd'], size=len(X), p=[0.1, 0.2, 0.5, 0.2])
+    X['categorical'] = np.random.choice(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], size=len(X))
     X['categorical2'] = np.random.choice(['q', 'b', 'c', 'd'], size=len(X), p=[0.1, 0.2, 0.5, 0.2])
     print(X.dtypes)
-    m = IGANN(task='regression', n_estimators=100, sparse=0, verbose=2)
+    m = IGANN(task='regression', n_estimators=10, sparse=3, verbose=2)
     m.fit(X, y)
 
