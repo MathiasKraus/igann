@@ -757,6 +757,27 @@ class IGANN:
             d['avg_effect'] = d['avg_effect'] / overall_effect * 100
 
         return feature_effects
+    
+    def get_interaction_shape_functions_as_dict(self):
+        feature_effects = []
+        for i, fp in enumerate(self.feat_pairs):
+            x1 = torch.linspace(self.unique[fp[0]].min(), self.unique[fp[0]].max(), 50).to(self.device)
+            x2 = torch.linspace(self.unique[fp[1]].min(), self.unique[fp[1]].max(), 50).to(self.device)
+            pred = torch.zeros((len(x1), len(x2)))
+            for v in range(len(x1)):
+                x1_stat = x1[v] * torch.ones(len(x2)).to(self.device)
+                for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
+                    pred[v, :] += boost_rate * regressor.predict_single_inter(x1_stat, x2, i).cpu().squeeze()
+            feature_effects.append(
+                {'x1_name': self.feature_names[fp[0]],
+                 'x2_name': self.feature_names[fp[1]],
+                 'x1': x1.cpu(),
+                 'x2': x2.cpu(),
+                 'y': pred, 
+                 'x1_hist': self.hist[fp[0]],
+                 'x2_hist': self.hist[fp[1]]})
+
+        return feature_effects
 
     def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None):
         '''
@@ -837,37 +858,30 @@ class IGANN:
                                             num="Interactions")  # 1,
         plt.subplots_adjust(wspace=0.2)
 
-        for i, fp in enumerate(self.feat_pairs):
-            x1 = torch.linspace(self.unique[fp[0]].min(), self.unique[fp[0]].max(), 50).to(self.device)
-            x2 = torch.linspace(self.unique[fp[1]].min(), self.unique[fp[1]].max(), 50).to(self.device)
-            pred = torch.zeros((len(x1), len(x2)))
-            for v in range(pred.shape[0]):
-                x1_stat = x1[v] * torch.ones(len(x2)).to(self.device)
-                for regressor, boost_rate in zip(self.regressors,
-                                                 self.boosting_rates):
-                    pred[v, :] += boost_rate * regressor.predict_single_inter(x1_stat, x2, i).cpu().squeeze()
+        feature_effects_interactions = self.get_interaction_shape_functions_as_dict()
 
+        for i, d in enumerate(feature_effects_interactions):
             if scaler_dict:
-                x1 = scaler_dict[self.feature_names[fp[0]]].inverse_transform(x1.cpu().reshape(-1, 1)).squeeze()
-                x2 = scaler_dict[self.feature_names[fp[1]]].inverse_transform(x2.cpu().reshape(-1, 1)).squeeze()
+                x1 = scaler_dict[d['x1_name']].inverse_transform(d['x1'].reshape(-1, 1)).squeeze()
+                x2 = scaler_dict[d['x2_name']].inverse_transform(d['x2'].reshape(-1, 1)).squeeze()
 
             if len(self.feat_pairs) == 1:
-                plot_object = axs_inter.pcolormesh(x1.cpu(), x2.cpu(), pred, shading='nearest')
+                plot_object = axs_inter.pcolormesh(d['x1'], d['x2'], d['y'], shading='nearest')
                 fig_inter.colorbar(plot_object, ax=axs_inter)
-                axs_inter.set_title('Min: {:.2f}, Max: {:.2f}'.format(torch.min(pred), torch.max(pred)))
-                axs_inter.set_xlabel(self.feature_names[self.feat_pairs[0][0]])
-                axs_inter.set_ylabel(self.feature_names[self.feat_pairs[0][1]])
+                axs_inter.set_title('Min: {:.2f}, Max: {:.2f}'.format(torch.min(d['y']), torch.max(d['y'])))
+                axs_inter.set_xlabel(d['x1_name'])
+                axs_inter.set_ylabel(d['x2_name'])
 
                 # self.axs_inter.set_aspect('equal', 'box')
                 axs_inter.set_aspect('auto', 'box')
                 fig_inter.tight_layout()
                 plt.show()
             else:
-                plot_object = axs_inter[i].pcolormesh(x1, x2, pred, shading='nearest')
+                plot_object = axs_inter[i].pcolormesh(d['x1'], d['x2'], d['y'], shading='nearest')
                 fig_inter.colorbar(plot_object, ax=axs_inter[i])
-                axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f}'.format(np.min(pred), np.max(pred)))
-                axs_inter[i].set_xlabel(self.feature_names[self.feat_pairs[i][0]])
-                axs_inter[i].set_ylabel(self.feature_names[self.feat_pairs[i][1]])
+                axs_inter[i].set_title('Min: {:.2f}, Max: {:.2f}'.format(torch.min(d['y']), torch.max(d['y'])))
+                axs_inter[i].set_xlabel(d['x1_name'])
+                axs_inter[i].set_ylabel(d['x2_name'])
 
                 # self.axs_inter[i].set_aspect('equal', 'box')
                 axs_inter[i].set_aspect('auto', 'box')
