@@ -296,8 +296,9 @@ class IGANN:
             return
 
         X.columns = [str(c) for c in X.columns]
-        categorical_cols = X.select_dtypes(include=['category', 'object']).columns.tolist()
-        numerical_cols = list(set(X.columns) - set(categorical_cols))
+        X = X.reindex(sorted(X.columns), axis=1)
+        categorical_cols = sorted(X.select_dtypes(include=['category', 'object']).columns.tolist())
+        numerical_cols = sorted(list(set(X.columns) - set(categorical_cols)))
 
         if type(y) == pd.Series:
             y = y.values
@@ -801,7 +802,7 @@ class IGANN:
 
 if __name__ == '__main__':
     from sklearn.datasets import make_circles, make_regression
-    
+    '''
     X_small, y_small = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.3)
     X_large, y_large = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.7)
 
@@ -832,17 +833,23 @@ if __name__ == '__main__':
     ######
     '''
     X, y = make_regression(100000, 10, n_informative=3)
-    y = (y - y.mean()) / y.std()
+    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
     start = time.time()
-    m = IGANN(task='regression', n_estimators=1, sparse=5, verbose=2)
-    m.fit(pd.DataFrame(X), y)
+    m = IGANN(task='regression', n_estimators=1000, sparse=10, verbose=1)
+    m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
     print(end - start)
-    m.plot_learning()
     m.plot_single()
+
+    print(np.mean((m.predict(X_train) - y_train)**2))
+    print(np.mean((m.predict(X_test) - y_test)**2))
+    sns.scatterplot(x=m.predict(X_train)[:1000], y=y_train[:1000])
     
     #####
-
+    '''
     X, y = make_regression(10000, 2, n_informative=2)
     y = (y - y.mean()) / y.std()
     X = pd.DataFrame(X)
