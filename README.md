@@ -67,6 +67,7 @@ X_names = X.columns
 
 X = scaler.fit_transform(X)
 X = pd.DataFrame(X, columns=X_names)
+X['sex'] = X.sex.apply(lambda x: 'w' if x > 0 else 'm')
 ```
 and !important scale the target values
 
@@ -80,12 +81,30 @@ model = IGANN(task='regression')
 model.fit(X, y)
 ```
 
-With model.plot_single(), we obtain the following shape functions
+With 
+```
+model.plot_single(plot_by_list=['age', 'bmi', 'bp', 'sex', 's1', 's2'])
+```
+we obtain the following shape functions
 
-![image](https://github.com/MathiasKraus/igann/assets/15181429/738663aa-fb6f-48de-bdf1-50e61be3ca3c)
+![image](https://github.com/MathiasKraus/igann/assets/15181429/9c0607a9-f4ac-4515-b098-22500aef147b)
+
 
 ### Sparse regression example
 
-Coming soon!
+In many cases, it makes sense to train a sparse IGANN model, i.e., a model which only basis its output on few features. This generally increases the ease of understanding the model behavior.
+
+```
+model = IGANN(task='regression', sparse=5)
+model.fit(X, y)
+model.plot_single()
+```
+
+yields (note that the sparse parameters denotes the max number of features)
+
+![image](https://github.com/MathiasKraus/igann/assets/15181429/1ef6a099-4e09-471a-9e6f-da955dbff23d)
+
+
+
 
 
