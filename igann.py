@@ -149,34 +149,7 @@ class ELM_Regressor():
         m.fit(X_hid_mult, y)
         self.output_model = m
         return X_hid
-
-
-class DT_Regressor():
-    def __init__(self, seed=0):
-        super().__init__()
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        self.split_i = None
-
-    def predict(self, X, hidden=False):
-        return self.predict_single(X[:, self.split_i], self.split_i)
-
-    def predict_single(self, x, i):
-        t = self.output_model.tree_
-        x_in = x.reshape(len(x), 1)
-        if self.split_i == i:
-            out = float(t.value[1]) * (x_in <= t.threshold[0]) + float(t.value[0]) * (x_in > t.threshold[0])
-            return out
-        else:
-            return 0 * x_in
-
-    def fit(self, X, y, mult_coef):
-        m = DecisionTreeRegressor(max_depth=1)
-        m.fit(X.numpy(), y.numpy())
-        self.output_model = m
-        self.split_i = self.output_model.tree_.feature[0]
-        return
-
+    
 
 class IGANN:
     '''
