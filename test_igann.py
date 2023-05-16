@@ -17,7 +17,7 @@ def test_sparse_igann():
     y_mean, y_std = y_train.mean(), y_train.std()
     y_train = (y_train - y_mean) / y_std
     y_test = (y_test - y_mean) / y_std
-    m =  igann.IGANN(task='regression', n_estimators=1000, sparse=10, verbose=1)
+    m =  igann.IGANN(task='regression', n_estimators=1000, sparse=10)
     m.fit(pd.DataFrame(X_train), y_train)
     assert len(m.feature_names) < 5
 
