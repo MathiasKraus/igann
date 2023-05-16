@@ -21,11 +21,11 @@ Lasse Bohlen, FAU Erlangen-Nürnberg
 Julian Rosenberger, FAU Erlangen-Nürnberg  
 Theodor Stöcker, FAU Erlangen-Nürnberg
 
-# Dependencies
+## Dependencies
 
 The project depends on PyTorch and abess (version 0.4.5).
 
-# Usage
+## Usage
 
 IGANN can in general be used similar to sklearn models. The methods to interact with IGANN are the following:
 - .fit(X, y) for training IGANN on (X, y) dataset. Categorical variables are derived based on their dtypes. That's why the feature marix X needs to be a pandas DataFrame.
@@ -36,7 +36,7 @@ IGANN can in general be used similar to sklearn models. The methods to interact 
 - .plot_learning() to show the learning curve on train and validation set
 
 
-# Parameters
+## Parameters
 
 When initializing IGANN, the following parameters can be set:
 - task: defines the task, can be 'regression' or 'classification'
@@ -55,7 +55,7 @@ When initializing IGANN, the following parameters can be set:
 - optimize_threshold: if True, the threshold for the classification is optimized using train data only and using the ROC curve. Otherwise, per default the raw logit value greater 0 means class 1 and less 0 means class -1.
 - verbose: verbosity level. Can be 0 for no information, 1 for printing losses, and 2 for plotting shape functions every 5 iterations.
 
-# Examples
+## Examples
 ### Basic regression example
 
 In the following, we use the common diabetes dataset from sklearn (https://scikit-learn.org/0.16/modules/generated/sklearn.datasets.load_diabetes.html). After loading the dataset via
