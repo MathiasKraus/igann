@@ -60,7 +60,7 @@ def test_classification_train_find_interactions_pd_df():
 
     assert (f1 > 0.94)
     # f1 above 0.98 in prior tests
-'''
+
 def test_classification_train_no_interaction_np_array():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
@@ -80,7 +80,7 @@ def test_classification_train_no_interaction_np_array():
 
     assert (f1 > 0.94)
     # f1 above 0.98 in prior tests
-'''
+
 def test_classification_train_find_interactions_np_array():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
@@ -100,7 +100,7 @@ def test_classification_train_find_interactions_np_array():
 
     assert (f1 > 0.94)
     # f1 above 0.98 in prior tests
-'''    
+   
 def test_classification_predict_proba_no_interaction_np_array():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
@@ -122,7 +122,7 @@ def test_classification_predict_proba_no_interaction_np_array():
 
     assert (f1 > 0.94)
     # f1 above 0.97 in prior tests
-
+'''
 def test_classification_predict_proba_no_interaction_pd_df():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
@@ -249,7 +249,7 @@ def test_regression_train_find_interactions_pd_df():
 
     assert (mse < 3300)
     # mse below 3100 in prior tests
-'''
+
 
 def test_regression_train_no_interaction_np_array():
     X, y = load_diabetes(return_X_y=True, as_frame=True)
@@ -269,7 +269,7 @@ def test_regression_train_no_interaction_np_array():
 
     assert (mse < 3300)
     # mse below 3100 in prior tests
-'''
+
 def test_regression_train_find_interactions_np_array():
     X, y = load_diabetes(return_X_y=True, as_frame=True)
     scaler = StandardScaler()
