@@ -4,12 +4,22 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.testing.compare import compare_images
 
-from sklearn.datasets import load_breast_cancer, load_diabetes
+from sklearn.datasets import load_breast_cancer, load_diabetes, make_regression
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import f1_score, mean_squared_error
 
 import numpy as np
+
+def test_sparse_igann():
+    X, y = make_regression(10000, 10, n_informative=3)
+    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
+    m =  igann.IGANN(task='regression', n_estimators=1000, sparse=10, verbose=1)
+    m.fit(pd.DataFrame(X_train), y_train)
+    assert len(m.feature_names) < 5
 
 def test_classification_train_no_interaction_pd_df():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
@@ -26,32 +36,7 @@ def test_classification_train_no_interaction_pd_df():
     X_train = pd.DataFrame(X_train, columns=X_names)
     X_test = pd.DataFrame(X_test, columns=X_names)
 
-    model = igann.IGANN()
-
-    model.fit(X_train, y_train)
-    preds = model.predict(X_test)
-
-    f1 = f1_score(y_test, preds)
-
-    assert (f1 > 0.94)
-    # f1 above 0.98 in prior tests
-'''
-def test_classification_train_find_interactions_pd_df():
-    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
-
-    scaler = StandardScaler()
-
-    X_names = X.columns
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
-
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
-
-    X_train = pd.DataFrame(X_train, columns=X_names)
-    X_test = pd.DataFrame(X_test, columns=X_names)
-
-    model = igann.IGANN(interactions=2)
+    model = igann.IGANN() # interactions=0)
 
     model.fit(X_train, y_train)
     preds = model.predict(X_test)
@@ -61,68 +46,93 @@ def test_classification_train_find_interactions_pd_df():
     assert (f1 > 0.94)
     # f1 above 0.98 in prior tests
 
-def test_classification_train_no_interaction_np_array():
-    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+# def test_classification_train_find_interactions_pd_df():
+#     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
-    scaler = StandardScaler()
+#     scaler = StandardScaler()
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
+#     X_names = X.columns
 
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
+#     X_train, X_test, y_train, y_test = train_test_split(X, y)
 
-    model = igann.IGANN()
+#     X_train = scaler.fit_transform(X_train)
+#     X_test = scaler.transform(X_test)
 
-    model.fit(X_train, y_train.to_numpy())
-    preds = model.predict(X_test)
+#     X_train = pd.DataFrame(X_train, columns=X_names)
+#     X_test = pd.DataFrame(X_test, columns=X_names)
 
-    f1 = f1_score(y_test.to_numpy(), preds)
+#     model = igann.IGANN(interactions=2)
 
-    assert (f1 > 0.94)
-    # f1 above 0.98 in prior tests
+#     model.fit(X_train, y_train)
+#     preds = model.predict(X_test)
 
-def test_classification_train_find_interactions_np_array():
-    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+#     f1 = f1_score(y_test, preds)
 
-    scaler = StandardScaler()
+#     assert (f1 > 0.94)
+#     # f1 above 0.98 in prior tests
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
+# def test_classification_train_no_interaction_np_array():
+#     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
+#     scaler = StandardScaler()
 
-    model = igann.IGANN(interactions=2)
+#     X_train, X_test, y_train, y_test = train_test_split(X, y)
 
-    model.fit(X_train, y_train.to_numpy())
-    preds = model.predict(X_test)
+#     X_train = scaler.fit_transform(X_train)
+#     X_test = scaler.transform(X_test)
 
-    f1 = f1_score(y_test.to_numpy(), preds)
+#     model = igann.IGANN() #interactions=0)
 
-    assert (f1 > 0.94)
-    # f1 above 0.98 in prior tests
-   
-def test_classification_predict_proba_no_interaction_np_array():
-    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+#     model.fit(X_train, y_train.to_numpy())
+#     preds = model.predict(X_test)
 
-    scaler = StandardScaler()
+#     f1 = f1_score(y_test.to_numpy(), preds)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
+#     assert (f1 > 0.94)
+#     # f1 above 0.98 in prior tests
 
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
+# def test_classification_train_find_interactions_np_array():
+#     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
-    model = igann.IGANN()
+#     scaler = StandardScaler()
 
-    model.fit(X_train, y_train.to_numpy())
+#     X_train, X_test, y_train, y_test = train_test_split(X, y)
 
-    preds = model.predict_proba(X_test)
+#     X_train = scaler.fit_transform(X_train)
+#     X_test = scaler.transform(X_test)
 
-    max_indices = np.argmax(preds, axis=1)
-    f1 = f1_score(y_test.to_numpy(), max_indices)
+#     model = igann.IGANN(interactions=2)
 
-    assert (f1 > 0.94)
-    # f1 above 0.97 in prior tests
-'''
+#     model.fit(X_train, y_train.to_numpy())
+#     preds = model.predict(X_test)
+
+#     f1 = f1_score(y_test.to_numpy(), preds)
+
+#     assert (f1 > 0.94)
+#     # f1 above 0.98 in prior tests
+    
+# def test_classification_predict_proba_no_interaction_np_array():
+#     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+
+#     scaler = StandardScaler()
+
+#     X_train, X_test, y_train, y_test = train_test_split(X, y)
+
+#     X_train = scaler.fit_transform(X_train)
+#     X_test = scaler.transform(X_test)
+
+#     model = igann.IGANN() # interactions=0)
+
+#     model.fit(X_train, y_train.to_numpy())
+
+#     preds = model.predict_proba(X_test)
+
+#     max_indices = np.argmax(preds, axis=1)
+#     f1 = f1_score(y_test.to_numpy(), max_indices)
+
+#     assert (f1 > 0.94)
+#     # f1 above 0.97 in prior tests
+
 def test_classification_predict_proba_no_interaction_pd_df():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
@@ -138,7 +148,7 @@ def test_classification_predict_proba_no_interaction_pd_df():
     X_train = pd.DataFrame(X_train, columns=X_names)
     X_test = pd.DataFrame(X_test, columns=X_names)
 
-    model = igann.IGANN()
+    model = igann.IGANN() # interactions=0)
 
     model.fit(X_train, y_train)
     preds = model.predict_proba(X_test)
@@ -160,29 +170,29 @@ def test_classification_plot_single():
 
     X = pd.DataFrame(X, columns=X_names)
 
-    model = igann.IGANN()
+    model = igann.IGANN() #interactions=0)
 
     model.fit(X, y)
 
     model.plot_single()
-'''
-def test_classification_plot_interactions():
-    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
-    scaler = StandardScaler()
+# def test_classification_plot_interactions():
+#     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
-    X_names = X.columns
+#     scaler = StandardScaler()
 
-    X = scaler.fit_transform(X)
+#     X_names = X.columns
 
-    X = pd.DataFrame(X, columns=X_names)
+#     X = scaler.fit_transform(X)
 
-    model = igann.IGANN(interactions=2)
+#     X = pd.DataFrame(X, columns=X_names)
 
-    model.fit(X, y)
+#     model = igann.IGANN(interactions=2)
 
-    model.plot_interactions()
-'''
+#     model.fit(X, y)
+
+#     model.plot_interactions()
+
 def test_classification_plot_learning():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
@@ -194,7 +204,7 @@ def test_classification_plot_learning():
 
     X = pd.DataFrame(X, columns=X_names)
 
-    model = igann.IGANN()
+    model = igann.IGANN() # interactions=2)
 
     model.fit(X, y)
     
@@ -207,88 +217,93 @@ def test_regression_train_no_interaction_pd_df():
 
     X_names = X.columns
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    kf = KFold(n_splits=8, shuffle=True)
+    mse = []
 
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
+    for train_index, test_index in kf.split(X, y):
+        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+        
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
 
-    X_train = pd.DataFrame(X_train, columns=X_names)
-    X_test = pd.DataFrame(X_test, columns=X_names)
+        X_train = pd.DataFrame(X_train, columns=X_names)
+        X_test = pd.DataFrame(X_test, columns=X_names)
 
-    model = igann.IGANN(task='regression')
+        model = igann.IGANN(task='regression') #, interactions=0)
 
-    model.fit(X_train, y_train)
-    preds = model.predict(X_test)
+        model.fit(X_train, y_train)
+        preds = model.predict(X_test)
 
-    mse = mean_squared_error(y_test, preds)
+        mse.append(mean_squared_error(y_test, preds))
 
-    assert (mse < 3300)
-    # mse below 3100 in prior tests
-'''
-def test_regression_train_find_interactions_pd_df():
-    X, y = load_diabetes(return_X_y=True, as_frame=True)
-
-    scaler = StandardScaler()
-
-    X_names = X.columns
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
-
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
-
-    X_train = pd.DataFrame(X_train, columns=X_names)
-    X_test = pd.DataFrame(X_test, columns=X_names)
-
-    model = igann.IGANN(task='regression', interactions=2)
-
-    model.fit(X_train, y_train)
-    preds = model.predict(X_test)
-
-    mse = mean_squared_error(y_test, preds)
-
-    assert (mse < 3300)
+    assert (np.mean(mse) < 3300)
     # mse below 3100 in prior tests
 
+# def test_regression_train_find_interactions_pd_df():
+#     X, y = load_diabetes(return_X_y=True, as_frame=True)
 
-def test_regression_train_no_interaction_np_array():
-    X, y = load_diabetes(return_X_y=True, as_frame=True)
-    scaler = StandardScaler()
+#     scaler = StandardScaler()
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
+#     X_names = X.columns
 
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
+#     X_train, X_test, y_train, y_test = train_test_split(X, y)
 
-    model = igann.IGANN(task='regression')
+#     X_train = scaler.fit_transform(X_train)
+#     X_test = scaler.transform(X_test)
 
-    model.fit(X_train, y_train)
-    preds = model.predict(X_test)
+#     X_train = pd.DataFrame(X_train, columns=X_names)
+#     X_test = pd.DataFrame(X_test, columns=X_names)
 
-    mse = mean_squared_error(y_test, preds)
+#     model = igann.IGANN(task='regression', interactions=2)
 
-    assert (mse < 3300)
-    # mse below 3100 in prior tests
+#     model.fit(X_train, y_train)
+#     preds = model.predict(X_test)
 
-def test_regression_train_find_interactions_np_array():
-    X, y = load_diabetes(return_X_y=True, as_frame=True)
-    scaler = StandardScaler()
+#     mse = mean_squared_error(y_test, preds)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
+#     assert (mse < 3300)
+#     # mse below 3100 in prior tests
 
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
 
-    model = igann.IGANN(task='regression', interactions=2)
+# def test_regression_train_no_interaction_np_array():
+#     X, y = load_diabetes(return_X_y=True, as_frame=True)
+#     scaler = StandardScaler()
 
-    model.fit(X_train, y_train)
-    preds = model.predict(X_test)
+#     X_train, X_test, y_train, y_test = train_test_split(X, y)
 
-    mse = mean_squared_error(y_test, preds)
+#     X_train = scaler.fit_transform(X_train)
+#     X_test = scaler.transform(X_test)
 
-    assert (mse < 3300)
-    # mse below 3100 in prior tests
-'''
+#     model = igann.IGANN(task='regression') #, interactions=0)
+
+#     model.fit(X_train, y_train)
+#     preds = model.predict(X_test)
+
+#     mse = mean_squared_error(y_test, preds)
+
+#     assert (mse < 3300)
+#     # mse below 3100 in prior tests
+
+# def test_regression_train_find_interactions_np_array():
+#     X, y = load_diabetes(return_X_y=True, as_frame=True)
+#     scaler = StandardScaler()
+
+#     X_train, X_test, y_train, y_test = train_test_split(X, y)
+
+#     X_train = scaler.fit_transform(X_train)
+#     X_test = scaler.transform(X_test)
+
+#     model = igann.IGANN(task='regression', interactions=2)
+
+#     model.fit(X_train, y_train)
+#     preds = model.predict(X_test)
+
+#     mse = mean_squared_error(y_test, preds)
+
+#     assert (mse < 3300)
+#     # mse below 3100 in prior tests
+
 def test_regression_plot_single():
     X, y = load_diabetes(return_X_y=True, as_frame=True)
 
@@ -300,30 +315,30 @@ def test_regression_plot_single():
 
     X = pd.DataFrame(X, columns=X_names)
 
-    model = igann.IGANN(task='regression')
+    model = igann.IGANN(task='regression') #, interactions=0)
 
     model.fit(X, y)
 
     model.plot_single()
     
-'''
-def test_regression_plot_interactions():
-    X, y = load_diabetes(return_X_y=True, as_frame=True)
 
-    scaler = StandardScaler()
+# def test_regression_plot_interactions():
+#     X, y = load_diabetes(return_X_y=True, as_frame=True)
 
-    X_names = X.columns
+#     scaler = StandardScaler()
 
-    X = scaler.fit_transform(X)
+#     X_names = X.columns
 
-    X = pd.DataFrame(X, columns=X_names)
+#     X = scaler.fit_transform(X)
 
-    model = igann.IGANN(task='regression', interactions=2)
+#     X = pd.DataFrame(X, columns=X_names)
 
-    model.fit(X, y)
+#     model = igann.IGANN(task='regression', interactions=2)
 
-    model.plot_interactions()
-'''
+#     model.fit(X, y)
+
+#     model.plot_interactions()
+
 def test_regression_plot_learning():
     X, y = load_diabetes(return_X_y=True, as_frame=True)
 
@@ -335,12 +350,12 @@ def test_regression_plot_learning():
 
     X = pd.DataFrame(X, columns=X_names)
 
-    model = igann.IGANN(task='regression')
+    model = igann.IGANN(task='regression') #, interactions=2)
 
     model.fit(X, y)
 
     model.plot_learning()
-'''
+
 def test_classification_plot_single_w_baseline():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
@@ -352,7 +367,7 @@ def test_classification_plot_single_w_baseline():
 
     X = pd.DataFrame(X, columns=X_names)
 
-    model = igann.IGANN(random_state=42)
+    model = igann.IGANN(random_state=42) # interactions=0, 
 
     model.fit(X, y)
 
@@ -367,57 +382,57 @@ def test_classification_plot_single_w_baseline():
     result = compare_images(baseline, path, tol=0.01)
     assert (result == None)
 
-def test_classification_plot_interactions_w_baseline():
-    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+# def test_classification_plot_interactions_w_baseline():
+#     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
-    scaler = StandardScaler()
+#     scaler = StandardScaler()
 
-    X_names = X.columns
+#     X_names = X.columns
 
-    X = scaler.fit_transform(X)
+#     X = scaler.fit_transform(X)
 
-    X = pd.DataFrame(X, columns=X_names)
+#     X = pd.DataFrame(X, columns=X_names)
 
-    model = igann.IGANN(interactions=2, random_state=42)
+#     model = igann.IGANN(interactions=2, random_state=42)
 
-    model.fit(X, y)
+#     model.fit(X, y)
 
-    model.plot_interactions()
+#     model.plot_interactions()
 
-    baseline = "baseline/baseline_class_plot_interactions.png"
+#     baseline = "baseline/baseline_class_plot_interactions.png"
 
-    path = "temp_class_plot_interactions.png"
+#     path = "temp_class_plot_interactions.png"
 
-    plt.gcf().savefig(path)
+#     plt.gcf().savefig(path)
 
-    result = compare_images(baseline, path, tol=0.01)
-    assert (result == None)
+#     result = compare_images(baseline, path, tol=0.01)
+#     assert (result == None)
 
-def test_classification_plot_learning_w_baseline():
-    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+# def test_classification_plot_learning_w_baseline():
+#     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
-    scaler = StandardScaler()
+#     scaler = StandardScaler()
 
-    X_names = X.columns
+#     X_names = X.columns
 
-    X = scaler.fit_transform(X)
+#     X = scaler.fit_transform(X)
 
-    X = pd.DataFrame(X, columns=X_names)
+#     X = pd.DataFrame(X, columns=X_names)
 
-    model = igann.IGANN(interactions=2, random_state=42)
+#     model = igann.IGANN(random_state=42) # interactions=2, 
 
-    model.fit(X, y)
+#     model.fit(X, y)
     
-    model.plot_learning()
+#     model.plot_learning()
 
-    baseline = "baseline/baseline_class_plot_learning.png"
+#     baseline = "baseline/baseline_class_plot_learning.png"
 
-    path = "temp_class_plot_learning.png"
+#     path = "temp_class_plot_learning.png"
 
-    plt.gcf().savefig(path)
+#     plt.gcf().savefig(path)
 
-    result = compare_images(baseline, path, tol=0.01)
-    assert (result == None)
+#     result = compare_images(baseline, path, tol=0.01)
+#     assert (result == None)
 
 def test_regression_plot_single_w_baseline():
     X, y = load_diabetes(return_X_y=True, as_frame=True)
@@ -430,7 +445,7 @@ def test_regression_plot_single_w_baseline():
 
     X = pd.DataFrame(X, columns=X_names)
 
-    model = igann.IGANN(task='regression', interactions=0, random_state=42)
+    model = igann.IGANN(task='regression', random_state=42) # , interactions=0
 
     model.fit(X, y)
 
@@ -445,30 +460,28 @@ def test_regression_plot_single_w_baseline():
     result = compare_images(baseline, path, tol=0.03)
     assert (result == None)
     
+# def test_regression_plot_interactions_w_baseline():
+#     X, y = load_diabetes(return_X_y=True, as_frame=True)
 
-def test_regression_plot_interactions_w_baseline():
-    X, y = load_diabetes(return_X_y=True, as_frame=True)
+#     scaler = StandardScaler()
 
-    scaler = StandardScaler()
+#     X_names = X.columns
 
-    X_names = X.columns
+#     X = scaler.fit_transform(X)
 
-    X = scaler.fit_transform(X)
+#     X = pd.DataFrame(X, columns=X_names)
 
-    X = pd.DataFrame(X, columns=X_names)
+#     model = igann.IGANN(task='regression', interactions=2, random_state=42)
 
-    model = igann.IGANN(task='regression', interactions=2, random_state=42)
+#     model.fit(X, y)
 
-    model.fit(X, y)
+#     model.plot_interactions()
 
-    model.plot_interactions()
+#     baseline = "baseline/baseline_reg_plot_interactions.png"
 
-    baseline = "baseline/baseline_reg_plot_interactions.png"
+#     path = "temp_reg_plot_interactions.png"
 
-    path = "temp_reg_plot_interactions.png"
+#     plt.gcf().savefig(path)
 
-    plt.gcf().savefig(path)
-
-    result = compare_images(baseline, path, tol=0.03)
-    assert (result == None)
-'''
+#     result = compare_images(baseline, path, tol=0.03)
+#     assert (result == None)
