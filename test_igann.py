@@ -12,13 +12,10 @@ from sklearn.metrics import f1_score, mean_squared_error
 import numpy as np
 
 def test_sparse_igann():
-    X, y = make_regression(10000, 10, n_informative=3)
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
-    y_mean, y_std = y_train.mean(), y_train.std()
-    y_train = (y_train - y_mean) / y_std
-    y_test = (y_test - y_mean) / y_std
-    m =  igann.IGANN(task='regression', n_estimators=1000, sparse=10)
-    m.fit(pd.DataFrame(X_train), y_train)
+    X, y = make_regression(100000, 10, n_informative=3, random_state=0)
+    y = (y - y.mean()) / y.std()
+    m =  IGANN(task='regression', n_estimators=1000, sparse=10)
+    m.fit(pd.DataFrame(X), y)
     assert len(m.feature_names) < 5
 
 def test_classification_train_no_interaction_pd_df():
