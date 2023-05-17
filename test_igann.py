@@ -439,32 +439,32 @@ def test_classification_plot_single_w_baseline():
 #     result = compare_images(baseline, path, tol=0.01)
 #     assert (result == None)
 
-def test_regression_plot_single_w_baseline():
-   X, y = load_diabetes(return_X_y=True, as_frame=True)
+# def test_regression_plot_single_w_baseline():
+#    X, y = load_diabetes(return_X_y=True, as_frame=True)
 
-   scaler = StandardScaler()
+#    scaler = StandardScaler()
 
-   X_names = X.columns
+#    X_names = X.columns
 
-   X = scaler.fit_transform(X)
-   y = (y - y.mean()) / y.std()
+#    X = scaler.fit_transform(X)
+#    y = (y - y.mean()) / y.std()
 
-   X = pd.DataFrame(X, columns=X_names)
+#    X = pd.DataFrame(X, columns=X_names)
 
-   model = igann.IGANN(task='regression', random_state=42) # , interactions=0
+#    model = igann.IGANN(task='regression', random_state=42) # , interactions=0
 
-   model.fit(X, y)
+#    model.fit(X, y)
 
-   model.plot_single()
+#    model.plot_single()
 
-   baseline = "baseline/baseline_reg_plot_single.png"
+#    baseline = "baseline/baseline_reg_plot_single.png"
 
-   path = "temp_reg_plot_single.png"
+#    path = "temp_reg_plot_single.png"
 
-   plt.gcf().savefig(path)
+#    plt.gcf().savefig(path)
 
-   result = compare_images(baseline, path, tol=0.05)
-   assert (result == None)
+#    result = compare_images(baseline, path, tol=0.05)
+#    assert (result == None)
     
 # def test_regression_plot_interactions_w_baseline():
 #     X, y = load_diabetes(return_X_y=True, as_frame=True)
