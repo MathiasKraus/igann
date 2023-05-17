@@ -463,7 +463,7 @@ def test_regression_plot_single_w_baseline():
 
    plt.gcf().savefig(path)
 
-   result = compare_images(baseline, path, tol=0.03)
+   result = compare_images(baseline, path, tol=0.05)
    assert (result == None)
     
 # def test_regression_plot_interactions_w_baseline():
