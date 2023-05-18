@@ -572,17 +572,17 @@ def test_parameters_elm_scale():
     model = igann.IGANN(task='regression')
     assert (model.elm_scale == 1) # If this fails, maybe the default value has changed
     model.fit(pd.DataFrame(X_train), y_train)
-    assert (model.regressors[0].scale == 1)
+    assert (model.regressors[0].elm_scale == 1)
 
     model = igann.IGANN(task='regression', elm_scale=3)
     assert (model.elm_scale == 3)
     model.fit(pd.DataFrame(X_train), y_train)
-    assert (model.regressors[0].scale == 3)
+    assert (model.regressors[0].elm_scale == 3)
 
     model = igann.IGANN(task='regression', elm_scale=0.1)
     assert (model.elm_scale == 0.1)
     model.fit(pd.DataFrame(X_train), y_train)
-    assert (model.regressors[0].scale == 0.1)
+    assert (model.regressors[0].elm_scale == 0.1)
 
 def test_parameters_elm_alpha():
     X, y = make_regression(10000, 10, n_informative=3)

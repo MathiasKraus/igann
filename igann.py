@@ -49,7 +49,7 @@ class ELM_Regressor():
     regression (Ridge Regression), see "Extreme Learning Machines" for more details.
     '''
 
-    def __init__(self, n_input, n_categorical_cols, n_hid, seed=0, scale=10, 
+    def __init__(self, n_input, n_categorical_cols, n_hid, seed=0, elm_scale=10, 
                  elm_alpha=0.0001, act='elu', device='cpu'):
         '''
         Input parameters:
@@ -58,7 +58,7 @@ class ELM_Regressor():
         - n_hid: number of hidden neurons for the base functions
         - seed: This number sets the seed for generating the random weights. It should
                 be different for each regressor
-        - scale: the scale which is used to initialize the weights in the hidden layer of the
+        - elm_scale: the scale which is used to initialize the weights in the hidden layer of the
                  model. These weights are not changed throughout the optimization.
         - elm_alpha: the regularization of the ridge regression.
         - act: the activation function in the model. can be 'elu', 'relu' or a torch activation function.
@@ -71,7 +71,7 @@ class ELM_Regressor():
         self.n_categorical_cols = n_categorical_cols
         # The following are the random weights in the model which are not optimized.
         self.hidden_list = torch.normal(mean=torch.zeros(self.n_numerical_cols, 
-                                                         self.n_numerical_cols * n_hid), std=scale).to(device)
+                                                         self.n_numerical_cols * n_hid), std=elm_scale).to(device)
 
         mask = torch.block_diag(*[torch.ones(n_hid)] * self.n_numerical_cols).to(device)
         self.hidden_mat = self.hidden_list * mask
@@ -79,7 +79,7 @@ class ELM_Regressor():
         self.n_input = n_input
         
         self.n_hid = n_hid
-        self.scale = scale
+        self.elm_scale = elm_scale
         self.elm_alpha = elm_alpha
         if act == 'elu':
             self.act = torch.nn.ELU()
@@ -438,7 +438,7 @@ class IGANN:
                                     n_categorical_cols=self.n_categorical_cols, 
                                     n_hid=self.n_hid,
                                     seed=counter, 
-                                    scale=self.elm_scale,
+                                    elm_scale=self.elm_scale,
                                     elm_alpha=self.elm_alpha,
                                     act=self.act, 
                                     device=self.device)
@@ -506,7 +506,7 @@ class IGANN:
 
     def _select_features(self, X, y):
         regressor = ELM_Regressor(X.shape[1], self.n_categorical_cols, self.n_hid, seed=0,
-                                  scale=self.elm_scale, act=self.act, device='cpu')
+                                  elm_scale=self.elm_scale, act=self.act, device='cpu')
         X_tilde = regressor.get_hidden_values(X)
         groups = self._flatten([list(np.ones(self.n_hid) * i + 1) for i in range(self.n_numerical_cols)])
         groups.extend(list(range(self.n_numerical_cols, X.shape[1])))
