@@ -309,7 +309,7 @@ class IGANN:
 
         return X
 
-    def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None):
+    def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None, fitted_dummies=None):
         '''
         This function fits the model on training data (X, y).
         Parameters:
@@ -324,7 +324,12 @@ class IGANN:
 
         self._reset_state()
 
-        X = self._preprocess_feature_matrix(X, fit_dummies=True)
+        if fitted_dummies != None:
+            self.get_dummies = fitted_dummies
+            X = self._preprocess_feature_matrix(X, fit_dummies=False)
+
+        else:
+            X = self._preprocess_feature_matrix(X, fit_dummies=True)
 
         if type(y) == pd.Series:
             y = y.values
@@ -792,6 +797,116 @@ class IGANN:
         plt.legend()
         plt.show()
 
+class IGANN_Bagged:
+    def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1, n_bags=3,
+                 elm_scale=1, elm_alpha=1, sparse=0, act='elu', early_stopping=50, device='cpu',
+                 random_state=1, optimize_threshold=False, verbose=0):
+        
+        self.n_bags = n_bags
+        self.sparse = sparse
+        self.bags = [IGANN(task, n_hid, n_estimators, boost_rate, init_reg, elm_scale, elm_alpha, sparse, act, early_stopping, device, random_state, optimize_threshold, verbose=0) for _ in range(n_bags)]
+
+    def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None):
+        X.columns = [str(c) for c in X.columns]
+        X = X.reindex(sorted(X.columns), axis=1)
+        categorical_cols = sorted(X.select_dtypes(include=['category', 'object']).columns.tolist())
+        numerical_cols = sorted(list(set(X.columns) - set(categorical_cols)))
+
+        if len(numerical_cols) > 0:
+            X_num = torch.from_numpy(X[numerical_cols].values).float()
+            self.n_numerical_cols = X_num.shape[1]
+        else:
+            self.n_numerical_cols = 0
+
+        if len(categorical_cols) > 0:
+            get_dummies = GetDummies(categorical_cols)
+            get_dummies.fit(X[categorical_cols])
+        else:
+            get_dummies = None
+
+        for b in self.bags:
+            print('#')
+            idx = np.random.choice(np.arange(len(X)), len(X))
+            b.fit(X.iloc[idx], np.array(y)[idx], val_set, eval, fitted_dummies=get_dummies)
+
+    def predict(self, X):
+        preds = []
+        for b in self.bags:
+            preds.append(b.predict(X))
+        return np.array(p).mean(0), np.array(p).std(0)
+
+    def predict_proba(self, X, y):
+        preds = []
+        for b in self.bags:
+            preds.append(b.predict_proba(X))
+        return np.array(p).mean(0), np.array(p).std(0)
+
+    def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None):
+        shape_functions = [b.get_shape_functions_as_dict() for b in self.bags]
+
+        avg_effects = {}
+        for sf in shape_functions:
+            for feat_d in sf:
+                if feat_d['name'] in avg_effects:
+                    avg_effects[feat_d['name']].append(feat_d['avg_effect'])
+                else:
+                    avg_effects[feat_d['name']] = [feat_d['avg_effect']]
+        
+        for k, v in avg_effects:
+            avg_effects[k] = np.mean(v)
+
+        for sf in shape_functions:
+            for feat_d in sf:
+                feat_d['avg_effect'] = avg_effects[feat_d['name']]
+
+        if plot_by_list is None:
+            top_k = [d for d in sorted(shape_functions[0], reverse=True, key=lambda x: x['avg_effect'])][:show_n]
+            show_n = min(show_n, len(top_k))
+        else:
+            top_k = [d for d in sorted(shape_functions[0], reverse=True, key=lambda x: x['avg_effect'])]
+            show_n = len(plot_by_list)
+
+        plt.close(fig="Shape functions")
+        fig, axs = plt.subplots(2, show_n, figsize=(14, 4),
+                                gridspec_kw={'height_ratios': [5, 1]},
+                                num="Shape functions")
+        plt.subplots_adjust(wspace=0.4)
+
+        i = 0
+        for d in top_k:
+            if plot_by_list is not None and d['name'] not in plot_by_list:
+                continue
+            if scaler_dict:
+                d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
+            if show_n == 1:
+                for sf in shape_functions:
+                    
+                    g = sns.lineplot(X=sf)
+                g = sns.lineplot(x=d['x'], y=d['y'], ax=axs[0], linewidth=2, color="darkblue")
+                g.axhline(y=0, color="grey", linestyle="--")
+                axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                                                        d['avg_effect']))
+                axs[0].grid()
+            else:
+                g = sns.lineplot(x=d['x'], y=d['y'], ax=axs[0][i], linewidth=2, color="darkblue")
+                g.axhline(y=0, color="grey", linestyle="--")
+                axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                                                            d['avg_effect']))
+                axs[0][i].grid()
+
+            i += 1
+
+        if show_n == 1:
+            axs[1].get_xaxis().set_visible(False)
+            axs[1].get_yaxis().set_visible(False)
+        else:
+            for i in range(show_n):
+                axs[1][i].get_xaxis().set_visible(False)
+                axs[1][i].get_yaxis().set_visible(False)
+        plt.show()
+        
 
 if __name__ == '__main__':
     from sklearn.datasets import make_circles, make_regression
@@ -825,21 +940,17 @@ if __name__ == '__main__':
 
     ######
     '''
-    X, y = make_regression(100000, 10, n_informative=3)
+    X, y = make_regression(10000, 3, n_informative=3)
     X_train, X_test, y_train, y_test = train_test_split(X, y)
     y_mean, y_std = y_train.mean(), y_train.std()
     y_train = (y_train - y_mean) / y_std
     y_test = (y_test - y_mean) / y_std
     start = time.time()
-    m = IGANN(task='regression', n_estimators=1000, sparse=10, verbose=1)
+    m = IGANN_Bagged(task='regression', n_estimators=100, verbose=1)
     m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
     print(end - start)
-    m.plot_single()
-
-    print(np.mean((m.predict(X_train) - y_train)**2))
-    print(np.mean((m.predict(X_test) - y_test)**2))
-    sns.scatterplot(x=m.predict(X_train)[:1000], y=y_train[:1000])
+    #m.plot_single()
     
     #####
     '''
