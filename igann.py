@@ -804,7 +804,8 @@ class IGANN_Bagged:
         
         self.n_bags = n_bags
         self.sparse = sparse
-        self.bags = [IGANN(task, n_hid, n_estimators, boost_rate, init_reg, elm_scale, elm_alpha, sparse, act, early_stopping, device, random_state, optimize_threshold, verbose=0) for _ in range(n_bags)]
+        self.random_state = random_state
+        self.bags = [IGANN(task, n_hid, n_estimators, boost_rate, init_reg, elm_scale, elm_alpha, sparse, act, early_stopping, device, random_state + i, optimize_threshold, verbose=0) for i in range(n_bags)]
 
     def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None):
         X.columns = [str(c) for c in X.columns]
@@ -824,22 +825,25 @@ class IGANN_Bagged:
         else:
             get_dummies = None
 
+        ctr = 0
         for b in self.bags:
             print('#')
-            idx = np.random.choice(np.arange(len(X)), len(X))
+            random_generator = np.random.Generator(np.random.PCG64(self.random_state + ctr))
+            ctr += 1
+            idx = random_generator.choice(np.arange(len(X)), len(X))
             b.fit(X.iloc[idx], np.array(y)[idx], val_set, eval, fitted_dummies=get_dummies)
 
     def predict(self, X):
         preds = []
         for b in self.bags:
             preds.append(b.predict(X))
-        return np.array(p).mean(0), np.array(p).std(0)
+        return np.array(preds).mean(0), np.array(preds).std(0)
 
     def predict_proba(self, X, y):
         preds = []
         for b in self.bags:
             preds.append(b.predict_proba(X))
-        return np.array(p).mean(0), np.array(p).std(0)
+        return np.array(preds).mean(0), np.array(preds).std(0)
 
     def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None):
         shape_functions = [b.get_shape_functions_as_dict() for b in self.bags]
@@ -852,7 +856,7 @@ class IGANN_Bagged:
                 else:
                     avg_effects[feat_d['name']] = [feat_d['avg_effect']]
         
-        for k, v in avg_effects:
+        for k, v in avg_effects.items():
             avg_effects[k] = np.mean(v)
 
         for sf in shape_functions:
@@ -872,31 +876,56 @@ class IGANN_Bagged:
                                 num="Shape functions")
         plt.subplots_adjust(wspace=0.4)
 
-        i = 0
+        axs_i = 0
         for d in top_k:
             if plot_by_list is not None and d['name'] not in plot_by_list:
                 continue
             if scaler_dict:
-                d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
-            if show_n == 1:
                 for sf in shape_functions:
-                    
-                    g = sns.lineplot(X=sf)
-                g = sns.lineplot(x=d['x'], y=d['y'], ax=axs[0], linewidth=2, color="darkblue")
+                    d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
+            x_l = []
+            y_l = []
+            for sf in shape_functions:
+                for feat in sf:
+                    if d['name'] == feat['name']:
+                        x_l.append(np.array(feat['x']))
+                        y_l.append(np.array(feat['y']))
+                    else:
+                        continue
+            x_intersect = []
+            for l in x_l:
+                if len(x_intersect) == 0:
+                    x_intersect = l
+                else:
+                    x_intersect = np.intersect1d(x_intersect, l)
+            y_intersect = []
+            for x_int in x_intersect:
+                temp = []
+                for i in range(len(y_l)):
+                    temp.append(y_l[i][np.argwhere(x_l[i] == x_int)])
+                y_intersect.append((np.mean(temp), np.std(temp)))
+            y_intersect = np.array(y_intersect)
+            if show_n == 1:
+                if d['datatype'] == 'categorical':
+                    g = sns.barplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0], errorbar="sd", color="darkblue") 
+                else: 
+                    g = sns.lineplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0], linewidth=2, color="darkblue")
                 g.axhline(y=0, color="grey", linestyle="--")
                 axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
-                axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                axs[0].set_title('{}:\n{:.2f}%'.format(self.bags[0]._split_long_titles(d['name']),
                                                         d['avg_effect']))
                 axs[0].grid()
             else:
-                g = sns.lineplot(x=d['x'], y=d['y'], ax=axs[0][i], linewidth=2, color="darkblue")
+                if d['datatype'] == 'categorical':
+                    g = sns.barplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0][axs_i], errorbar= y_intersect[:, 1], color="darkblue")
+                else: 
+                    g = sns.lineplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0][axs_i], linewidth=2, color="darkblue")
                 g.axhline(y=0, color="grey", linestyle="--")
-                axs[1][i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
-                axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
+                axs[1][axs_i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                axs[0][axs_i].set_title('{}:\n{:.2f}%'.format(self.bags[0]._split_long_titles(d['name']),
                                                             d['avg_effect']))
-                axs[0][i].grid()
-
-            i += 1
+                axs[0][axs_i].grid()
+            axs_i += 1
 
         if show_n == 1:
             axs[1].get_xaxis().set_visible(False)
@@ -940,17 +969,17 @@ if __name__ == '__main__':
 
     ######
     '''
-    X, y = make_regression(10000, 3, n_informative=3)
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    X, y = make_regression(10000, 7, n_informative=7, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y,random_state=42)
     y_mean, y_std = y_train.mean(), y_train.std()
     y_train = (y_train - y_mean) / y_std
     y_test = (y_test - y_mean) / y_std
     start = time.time()
-    m = IGANN_Bagged(task='regression', n_estimators=100, verbose=1)
+    m = IGANN_Bagged(task='regression', n_estimators=100, verbose=1, n_bags=5)
     m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
     print(end - start)
-    #m.plot_single()
+    m.plot_single(show_n=5)
     
     #####
     '''
