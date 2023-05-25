@@ -658,8 +658,11 @@ class IGANN:
     def _split_long_titles(self, l):
         return '\n'.join(l[p:p + 22] for p in range(0, len(l), 22))
 
-    def _get_pred_of_i(self, i):
-        feat_values = self.unique[i]
+    def _get_pred_of_i(self, i, x_values=None):
+        if x_values == None:
+            feat_values = self.unique[i]
+        else:
+            feat_values = x_values[i]
         if self.task == 'classification':
             pred = self.init_classifier.coef_[0, i] * feat_values
         else:
@@ -685,11 +688,11 @@ class IGANN:
         
         return [v for k, v in shape_functions_compressed.items()]
 
-    def get_shape_functions_as_dict(self):
+    def get_shape_functions_as_dict(self, x_values=None):
         shape_functions = []
         for i, feat_name in enumerate(self.feature_names):
             datatype = 'numerical' if i < self.n_numerical_cols else 'categorical'
-            feat_values, pred = self._get_pred_of_i(i)
+            feat_values, pred = self._get_pred_of_i(i, x_values)
             if datatype == 'numerical':
                 shape_functions.append(
                     {'name': feat_name, 
@@ -797,6 +800,8 @@ class IGANN:
         plt.legend()
         plt.show()
 
+
+
 class IGANN_Bagged:
     def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1, n_bags=3,
                  elm_scale=1, elm_alpha=1, sparse=0, act='elu', early_stopping=50, device='cpu',
@@ -805,7 +810,7 @@ class IGANN_Bagged:
         self.n_bags = n_bags
         self.sparse = sparse
         self.random_state = random_state
-        self.bags = [IGANN(task, n_hid, n_estimators, boost_rate, init_reg, elm_scale, elm_alpha, sparse, act, early_stopping, device, random_state + i, optimize_threshold, verbose=0) for i in range(n_bags)]
+        self.bags = [IGANN(task, n_hid, n_estimators, boost_rate, init_reg, elm_scale, elm_alpha, sparse, act, early_stopping, device, random_state + i, optimize_threshold, verbose=verbose) for i in range(n_bags)]
 
     def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None):
         X.columns = [str(c) for c in X.columns]
@@ -846,7 +851,21 @@ class IGANN_Bagged:
         return np.array(preds).mean(0), np.array(preds).std(0)
 
     def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None):
-        shape_functions = [b.get_shape_functions_as_dict() for b in self.bags]
+        x_values = dict()
+        for i, feat_name in enumerate(self.bags[0].feature_names):
+            curr_min = 2147483647
+            curr_max = -2147483646
+            most_unique = 0
+            for b in self.bags:
+                if b.X_min[0][i] < curr_min:
+                    curr_min = b.X_min[0][i]
+                if b.X_max[0][i] > curr_max:
+                    curr_max = b.X_max[0][i]
+                if len(b.unique[i]) > most_unique:
+                    most_unique = len(b.unique[i])
+            x_values[i] = torch.from_numpy(np.arange(curr_min, curr_max, 1. / most_unique)).float()
+
+        shape_functions = [b.get_shape_functions_as_dict(x_values=x_values) for b in self.bags]
 
         avg_effects = {}
         for sf in shape_functions:
@@ -883,34 +902,22 @@ class IGANN_Bagged:
             if scaler_dict:
                 for sf in shape_functions:
                     d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
-            x_l = []
             y_l = []
             for sf in shape_functions:
                 for feat in sf:
                     if d['name'] == feat['name']:
-                        x_l.append(np.array(feat['x']))
                         y_l.append(np.array(feat['y']))
                     else:
                         continue
-            x_intersect = []
-            for l in x_l:
-                if len(x_intersect) == 0:
-                    x_intersect = l
-                else:
-                    x_intersect = np.intersect1d(x_intersect, l)
-            y_intersect = []
-            for x_int in x_intersect:
-                temp = []
-                for i in range(len(y_l)):
-                    temp.append(y_l[i][np.argwhere(x_l[i] == x_int)])
-                y_intersect.append((np.mean(temp), np.std(temp)))
-            y_intersect = np.array(y_intersect)
+            y_mean = np.mean(y_l, axis=0)
+            y_std = np.std(y_l, axis=0)
+            y_mean_and_std = np.column_stack((y_mean, y_std))
             if show_n == 1:
                 if d['datatype'] == 'categorical':
-                    g = sns.barplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0], errorbar="sd", color="darkblue") 
+                    g = sns.barplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0], errorbar="sd", color="darkblue") 
                 else: 
-                    g = sns.lineplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0], linewidth=2, color="darkblue")
-                    g = axs[0].fill_between(x=x_intersect, y1=y_intersect[:, 0] - y_intersect[:, 1], y2 = y_intersect[:, 0] + y_intersect[:, 1], color='lightcoral')
+                    g = sns.lineplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0], linewidth=2, color="darkblue")
+                    g = axs[0].fill_between(x=d['x'], y1=y_mean_and_std[:, 0] - y_mean_and_std[:, 1], y2 = y_mean_and_std[:, 0] + y_mean_and_std[:, 1], color='lightcoral')
                 axs[0].axhline(y=0, color="grey", linestyle="--")
                 axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                 axs[0].set_title('{}:\n{:.2f}%'.format(self.bags[0]._split_long_titles(d['name']),
@@ -918,10 +925,10 @@ class IGANN_Bagged:
                 axs[0].grid()
             else:
                 if d['datatype'] == 'categorical':
-                    g = sns.barplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0][axs_i], errorbar= y_intersect[:, 1], color="darkblue")
+                    g = sns.barplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0][axs_i], errorbar= y_mean_and_std[:, 1], color="darkblue")
                 else:                  
-                    g = sns.lineplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0][axs_i], linewidth=2, color="darkblue")
-                    g = axs[0][axs_i].fill_between(x=x_intersect, y1=y_intersect[:, 0] - y_intersect[:, 1], y2 = y_intersect[:, 0] + y_intersect[:, 1], color='lightcoral')
+                    g = sns.lineplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0][axs_i], linewidth=2, color="darkblue")
+                    g = axs[0][axs_i].fill_between(x=d['x'], y1=y_mean_and_std[:, 0] - y_mean_and_std[:, 1], y2 = y_mean_and_std[:, 0] + y_mean_and_std[:, 1], color='lightcoral')
                 axs[0][axs_i].axhline(y=0, color="grey", linestyle="--")
                 axs[1][axs_i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                 axs[0][axs_i].set_title('{}:\n{:.2f}%'.format(self.bags[0]._split_long_titles(d['name']),
@@ -977,7 +984,8 @@ if __name__ == '__main__':
     y_train = (y_train - y_mean) / y_std
     y_test = (y_test - y_mean) / y_std
     start = time.time()
-    m = IGANN_Bagged(task='regression', n_estimators=100, verbose=1, n_bags=5)
+    m = IGANN_Bagged(task='regression', n_estimators=100, verbose=0, n_bags=5)
+    # m = IGANN(task='regression', n_estimators=100, verbose=0)
     m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
     print(end - start)
