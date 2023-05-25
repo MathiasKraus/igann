@@ -910,7 +910,8 @@ class IGANN_Bagged:
                     g = sns.barplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0], errorbar="sd", color="darkblue") 
                 else: 
                     g = sns.lineplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0], linewidth=2, color="darkblue")
-                g.axhline(y=0, color="grey", linestyle="--")
+                    g = axs[0].fill_between(x=x_intersect, y1=y_intersect[:, 0] - y_intersect[:, 1], y2 = y_intersect[:, 0] + y_intersect[:, 1], color='lightcoral')
+                axs[0].axhline(y=0, color="grey", linestyle="--")
                 axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                 axs[0].set_title('{}:\n{:.2f}%'.format(self.bags[0]._split_long_titles(d['name']),
                                                         d['avg_effect']))
@@ -918,9 +919,10 @@ class IGANN_Bagged:
             else:
                 if d['datatype'] == 'categorical':
                     g = sns.barplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0][axs_i], errorbar= y_intersect[:, 1], color="darkblue")
-                else: 
+                else:                  
                     g = sns.lineplot(x=x_intersect, y=y_intersect[:, 0], ax=axs[0][axs_i], linewidth=2, color="darkblue")
-                g.axhline(y=0, color="grey", linestyle="--")
+                    g = axs[0][axs_i].fill_between(x=x_intersect, y1=y_intersect[:, 0] - y_intersect[:, 1], y2 = y_intersect[:, 0] + y_intersect[:, 1], color='lightcoral')
+                axs[0][axs_i].axhline(y=0, color="grey", linestyle="--")
                 axs[1][axs_i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
                 axs[0][axs_i].set_title('{}:\n{:.2f}%'.format(self.bags[0]._split_long_titles(d['name']),
                                                             d['avg_effect']))
