@@ -20,12 +20,32 @@ class GetDummies(BaseEstimator, TransformerMixin):
         self.columns = None
         self.dummy_columns = dummy_columns
 
+        self.cols_per_feat = dict() # should be a list of len=2 for key = categorical_feature_name, val = [[remaining_column_names], dropped_column_name]
+        self._cols_per_feat_needed = True
+
     def fit(self, X, y=None):
+        for c in X.columns:
+            for val in X[c].unique():
+                if c not in self.cols_per_feat.keys():
+                    self.cols_per_feat[c] = []
+                self.cols_per_feat[c].append(str(c+'_'+val))
+        
         self.columns = pd.get_dummies(X, columns=self.dummy_columns, drop_first=True).columns
         return self
 
     def transform(self, X):
         X_new = pd.get_dummies(X, columns=self.dummy_columns , drop_first=True)
+
+        if self._cols_per_feat_needed:
+            for key, val in self.cols_per_feat.items():
+                curr = [[], '']
+                for v in val:
+                    if v not in X_new.columns:
+                        curr[1] = v
+                    else:
+                        curr[0].append(v)
+                self.cols_per_feat[key] = curr
+            self._cols_per_feat_needed = False
         return X_new.reindex(columns=self.columns, fill_value=0)
 
 class torch_Ridge():
@@ -710,6 +730,24 @@ class IGANN:
                     'avg_effect': float(torch.mean(torch.abs(pred))),
                     'hist': [[self.hist[i][0][-1]], [0]]})
 
+        if sum(1 for elem in shape_functions if elem['datatype'] == 'categorical') > 0:
+            if shape_functions[0]['datatype'] == 'numerical':
+                len_of_num_hist = np.sum(np.array(shape_functions[0]['hist'][0]))
+                for key, val in self.get_dummies.cols_per_feat.items():
+                    get_avg = []
+                    len_of_other_hists = 0
+                    for sf in shape_functions:
+                        if key == sf['name']:
+                            get_avg.append(sf['avg_effect'])
+                            len_of_other_hists += sf['hist'][0][0].item()
+                    shape_functions.append(
+                            {'name': key, 
+                            'datatype': 'categorical',
+                            'x': [''.join(val[1].split('_')[1:])],
+                            'y': [0], # constant zero value
+                            'avg_effect': float(np.mean(get_avg)), # maybe change to 0?
+                            'hist': [[torch.tensor(len_of_num_hist - len_of_other_hists)], [0]]})
+
         overall_effect = np.sum([d['avg_effect'] for d in shape_functions])
         for d in shape_functions:
             d['avg_effect'] = d['avg_effect'] / overall_effect * 100
@@ -749,13 +787,27 @@ class IGANN:
             if d['datatype'] == 'categorical':
                 if show_n == 1:
                     sns.barplot(x=d['x'], y=d['y'], color="darkblue", ax=axs[0])
-                    axs[1].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
+
+                    hist_items = [d['hist'][0][0].item()]
+                    hist_items.extend(his[0].item() for his in d['hist'][0][1:])
+                    # TODO current hist returned is like this: [tensor1, [tensor2], [tensor3] ...] (first item not in list)
+                    axs[1].bar(d['hist'][1], hist_items, width=1, color='darkblue')
+                    # axs[1].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
+                    
                     axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                            d['avg_effect']))
                     axs[0].grid()
                 else:
                     sns.barplot(x=d['x'], y=d['y'], color="darkblue", ax=axs[0][i])
-                    axs[1][i].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
+
+                    ###
+                    hist_items = [d['hist'][0][0].item()]
+                    hist_items.extend(his[0].item() for his in d['hist'][0][1:])
+                    # TODO current hist returned is like this: [tensor1, [tensor2], [tensor3] ...] (first item not in list)
+                    ###
+                    axs[1][i].bar(d['hist'][1], hist_items, width=1, color='darkblue')
+                    # axs[1][i].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
+
                     axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                               d['avg_effect']))
                     axs[0][i].grid()
@@ -915,26 +967,12 @@ class IGANN_Bagged:
             if show_n == 1:
                 if d['datatype'] == 'categorical':
                     # g = sns.barplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0], errorbar="sd", color="darkblue") 
-                    temp_df = pd.DataFrame()        
-                    for i in range(len(d['x'])):
-                        temp_df[d['x'][i]] = [y[i] for y in y_l]
                     hist_items = [d['hist'][0][0].item()]
                     hist_items.extend(his[0].item() for his in d['hist'][0][1:])
-                    temp_df_transposed = temp_df.T
-                    x_for_histogram = temp_df_transposed.index
-                    len_of_num_histos = 0 # no values are infered when all features in shape_functions[0] are categorical
-                    for d1 in shape_functions[0]:
-                        if d1['datatype'] == 'numerical':
-                            len_of_num_histos = np.sum(np.array(d1['hist'][0])) - np.sum(hist_items)
-                            break
-                    x_for_histogram = list(x_for_histogram)
-                    if len_of_num_histos != 0: # no values are infered when all features in shape_functions[0] are categorical
-                        hist_items.append(len_of_num_histos)
-                        x_for_histogram.append("else")
 
-                    axs[0].bar(x=temp_df_transposed.index, height=temp_df_transposed.mean(axis=1), width=.5, color=plt.cm.Blues(np.linspace(1, 0.4, len(x_for_histogram))))
-                    axs[0].errorbar(x=temp_df_transposed.index, y=temp_df_transposed.mean(axis=1), yerr=temp_df_transposed.std(axis=1), fmt='none', color='black', capsize=5) 
-                    axs[1].bar(x=x_for_histogram, height=hist_items, width=1, color=plt.cm.Blues(np.linspace(1, 0.4, len(x_for_histogram))))
+                    axs[0].bar(x=d['x'], height=y_mean_and_std[:, 0], width=.5, color="darkblue")
+                    axs[0].errorbar(x=d['x'], y=y_mean_and_std[:, 0], yerr=y_mean_and_std[:, 1], fmt='none', color='black', capsize=5) 
+                    axs[1].bar(x=d['x'], height=hist_items, width=1, color="darkblue")
                 else: 
                     g = sns.lineplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0], linewidth=2, color="darkblue")
                     g = axs[0].fill_between(x=d['x'], y1=y_mean_and_std[:, 0] - y_mean_and_std[:, 1], y2 = y_mean_and_std[:, 0] + y_mean_and_std[:, 1], color='aqua')
@@ -946,26 +984,12 @@ class IGANN_Bagged:
             else:
                 if d['datatype'] == 'categorical':
                     # g = sns.barplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0][axs_i], errorbar= "sd", color="darkblue")
-                    temp_df = pd.DataFrame()        
-                    for i in range(len(d['x'])):
-                        temp_df[d['x'][i]] = [y[i] for y in y_l]
                     hist_items = [d['hist'][0][0].item()]
                     hist_items.extend(his[0].item() for his in d['hist'][0][1:])
-                    temp_df_transposed = temp_df.T
-                    x_for_histogram = temp_df_transposed.index
-                    len_of_num_histos = 0 # no values are infered when all features in shape_functions[0] 
-                    for d1 in shape_functions[0]:
-                        if d1['datatype'] == 'numerical':
-                            len_of_num_histos = np.sum(np.array(d1['hist'][0])) - np.sum(hist_items)
-                            break
-                    x_for_histogram = list(x_for_histogram)
-                    if len_of_num_histos != 0: # no values are infered when all features in shape_functions[0] are categorical
-                        hist_items.append(len_of_num_histos)
-                        x_for_histogram.append("else")
 
-                    axs[0][axs_i].bar(x=temp_df_transposed.index, height=temp_df_transposed.mean(axis=1), width=.5, color=plt.cm.Blues(np.linspace(1, 0.4, len(x_for_histogram))))
-                    axs[0][axs_i].errorbar(x=temp_df_transposed.index, y=temp_df_transposed.mean(axis=1), yerr=temp_df_transposed.std(axis=1), fmt='none', color='black', capsize=5) 
-                    axs[1][axs_i].bar(x=x_for_histogram, height=hist_items, width=1, color=plt.cm.Blues(np.linspace(1, 0.4, len(x_for_histogram))))
+                    axs[0][axs_i].bar(x=d['x'], height=y_mean_and_std[:, 0], width=.5, color="darkblue")
+                    axs[0][axs_i].errorbar(x=d['x'], y=y_mean_and_std[:, 0], yerr=y_mean_and_std[:, 1], fmt='none', color='black', capsize=5) 
+                    axs[1][axs_i].bar(x=d['x'], height=hist_items, width=1, color="darkblue")
                 else:
                     g = sns.lineplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0][axs_i], linewidth=2, color="darkblue")
                     g = axs[0][axs_i].fill_between(x=d['x'], y1=y_mean_and_std[:, 0] - y_mean_and_std[:, 1], y2 = y_mean_and_std[:, 0] + y_mean_and_std[:, 1], color='aqua')
@@ -1020,7 +1044,8 @@ if __name__ == '__main__':
     '''
     X, y = make_regression(1000, 4, n_informative=4, random_state=42)
     X = pd.DataFrame(X)
-    X['cat_test'] = np.random.choice(['A', 'B', 'C'], X.shape[0], p=[0.3, 0.2, 0.5])
+    X['cat_test'] = np.random.choice(['A', 'B', 'C', 'D'], X.shape[0], p=[0.2, 0.2, 0.1, 0.5])
+    X['cat_test_2'] = np.random.choice(['E', 'F', 'G', 'H'], X.shape[0], p=[0.2, 0.2, 0.1, 0.5])
     X_train, X_test, y_train, y_test = train_test_split(X, y,random_state=42)
     y_mean, y_std = y_train.mean(), y_train.std()
     y_train = (y_train - y_mean) / y_std
@@ -1031,7 +1056,7 @@ if __name__ == '__main__':
     m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
     print(end - start)
-    m.plot_single(show_n=5)
+    m.plot_single(show_n=6)
     
     #####
     '''
