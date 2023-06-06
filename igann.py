@@ -896,7 +896,7 @@ class IGANN_Bagged:
             preds.append(b.predict(X))
         return np.array(preds).mean(0), np.array(preds).std(0)
 
-    def predict_proba(self, X, y):
+    def predict_proba(self, X):
         preds = []
         for b in self.bags:
             preds.append(b.predict_proba(X))
