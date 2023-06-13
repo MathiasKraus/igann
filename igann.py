@@ -12,6 +12,7 @@ from sklearn.tree import DecisionTreeRegressor
 import matplotlib.pyplot as plt
 import seaborn as sns
 import abess.linear
+import multiprocessing
 
 warnings.simplefilter('once', UserWarning)
 
@@ -857,12 +858,20 @@ class IGANN:
 class IGANN_Bagged:
     def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1, n_bags=3,
                  elm_scale=1, elm_alpha=1, sparse=0, act='elu', early_stopping=50, device='cpu',
-                 random_state=1, optimize_threshold=False, verbose=0):
+                 random_state=1, optimize_threshold=False, verbose=0, n_jobs=1):
         
         self.n_bags = n_bags
         self.sparse = sparse
         self.random_state = random_state
         self.bags = [IGANN(task, n_hid, n_estimators, boost_rate, init_reg, elm_scale, elm_alpha, sparse, act, early_stopping, device, random_state + i, optimize_threshold, verbose=verbose) for i in range(n_bags)]
+        if n_jobs == -1:
+            self.n_jobs = multiprocessing.cpu_count()
+        else:
+            self.n_jobs = n_jobs
+    
+    def _fit_thread_helper(igann, queue, x, y, val_set, eval, get_dummies):
+        igann.fit(X=x, y=y, val_set=val_set, eval=eval, fitted_dummies=get_dummies)
+        queue.put(igann)
 
     def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None):
         X.columns = [str(c) for c in X.columns]
@@ -882,13 +891,37 @@ class IGANN_Bagged:
         else:
             get_dummies = None
 
-        ctr = 0
-        for b in self.bags:
-            print('#')
-            random_generator = np.random.Generator(np.random.PCG64(self.random_state + ctr))
-            ctr += 1
-            idx = random_generator.choice(np.arange(len(X)), len(X))
-            b.fit(X.iloc[idx], np.array(y)[idx], val_set, eval, fitted_dummies=get_dummies)
+        if self.n_jobs == 1:
+            ctr = 0
+            for b in self.bags:
+                print('#')
+                random_generator = np.random.Generator(np.random.PCG64(self.random_state + ctr))
+                ctr += 1
+                idx = random_generator.choice(np.arange(len(X)), len(X))
+                b.fit(X.iloc[idx], np.array(y)[idx], val_set, eval, fitted_dummies=get_dummies)
+        else:
+            processes = []
+            ctr = 0
+            queue = multiprocessing.Queue(len(self.bags))
+            for i, b in enumerate(self.bags):
+                print('#')
+                random_generator = np.random.Generator(np.random.PCG64(self.random_state + i))
+                idx = random_generator.choice(np.arange(len(X)), len(X))              
+                if i < self.n_jobs:
+                    p = multiprocessing.Process(target=IGANN_Bagged._fit_thread_helper, args=(b, queue, X.iloc[idx], np.array(y)[idx], val_set, eval, get_dummies))
+                    processes.append(p)
+                    p.start()
+                else:
+                    processes[ctr].join()
+                    ctr += 1
+                    p = multiprocessing.Process(target=IGANN_Bagged._fit_thread_helper, args=(b, queue, X.iloc[idx], np.array(y)[idx], val_set, eval, get_dummies))
+                    processes.append(p)
+                    p.start()
+            for i in range(len(self.bags)):
+                self.bags[i] = queue.get()
+            for i in range(len(self.bags)):
+                processes[i].join()
+            
 
     def predict(self, X):
         preds = []
@@ -1051,7 +1084,7 @@ if __name__ == '__main__':
     y_train = (y_train - y_mean) / y_std
     y_test = (y_test - y_mean) / y_std
     start = time.time()
-    m = IGANN_Bagged(task='regression', n_estimators=100, verbose=0, n_bags=5) #, device='cuda'
+    m = IGANN_Bagged(task='regression', n_estimators=100, verbose=0, n_bags=5, n_jobs=-1) #, device='cuda'
     # m = IGANN(task='regression', n_estimators=100, verbose=0)
     m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
