@@ -12,7 +12,7 @@ from sklearn.tree import DecisionTreeRegressor
 import matplotlib.pyplot as plt
 import seaborn as sns
 import abess.linear
-import multiprocessing
+import torch.multiprocessing as multiprocessing
 
 warnings.simplefilter('once', UserWarning)
 
@@ -56,7 +56,7 @@ class torch_Ridge():
         self.device = device
 
     def fit(self, X, y):
-        self.coef_ = torch.linalg.solve(X.T @ X + self.alpha * torch.eye(X.shape[1]).to(self.device), X.T @ y)
+        self.coef_ = torch.linalg.solve(X.T @ X + self.alpha * torch.eye(X.shape[1]).to(self.device), X.T @ y).share_memory_()
 
     def predict(self, X):
         return X.to(self.device) @ self.coef_
@@ -92,9 +92,9 @@ class ELM_Regressor():
         self.n_categorical_cols = n_categorical_cols
         # The following are the random weights in the model which are not optimized.
         self.hidden_list = torch.normal(mean=torch.zeros(self.n_numerical_cols, 
-                                                         self.n_numerical_cols * n_hid), std=scale).to(device)
+                                                         self.n_numerical_cols * n_hid), std=scale).to(device).share_memory_()
 
-        mask = torch.block_diag(*[torch.ones(n_hid)] * self.n_numerical_cols).to(device)
+        mask = torch.block_diag(*[torch.ones(n_hid)] * self.n_numerical_cols).to(device).share_memory_()
         self.hidden_mat = self.hidden_list * mask
         self.output_model = None
         self.n_input = n_input
@@ -119,7 +119,7 @@ class ELM_Regressor():
         '''
         X_hid = X[:,:self.n_numerical_cols] @ self.hidden_mat
         X_hid = self.act(X_hid)
-        X_hid = torch.hstack((X_hid, X[:,self.n_numerical_cols:]))
+        X_hid = torch.hstack((X_hid, X[:,self.n_numerical_cols:])).share_memory_()
 
         return X_hid
 
@@ -248,7 +248,7 @@ class IGANN:
         if torch.max(p) > 100 or torch.min(p) < -100:
             warnings.warn(
                 'Cutting prediction to [-100, 100]. Did you forget to scale y? Consider higher regularization elm_alpha.')
-            return torch.clip(p, -100, 100)
+            return torch.clip(p, -100, 100).share_memory_()
         else:
             return p
 
@@ -265,15 +265,15 @@ class IGANN:
         This function computes the square root of the hessians of the log loss or the mean squared error.
         '''
         if self.task == 'classification':
-            return 0.5 / torch.cosh(0.5 * y * p)
+            return 0.5 / torch.cosh(0.5 * y * p).share_memory_()
         else:
-            return torch.sqrt(torch.tensor([2.0]).to(self.device))
+            return torch.sqrt(torch.tensor([2.0]).to(self.device)).share_memory_()
 
     def _get_y_tilde(self, y, p):
         if self.task == 'classification':
-            return y / torch.exp(0.5 * y * p)
+            return y / torch.exp(0.5 * y * p).share_memory_()
         else:
-            return torch.sqrt(torch.tensor(2.0).to(self.device)) * (y - p)
+            return torch.sqrt(torch.tensor(2.0).to(self.device)) * (y - p).share_memory_()
 
     def _reset_state(self):
         self.regressors = []
@@ -296,7 +296,7 @@ class IGANN:
         numerical_cols = sorted(list(set(X.columns) - set(categorical_cols)))
 
         if len(numerical_cols) > 0:
-            X_num = torch.from_numpy(X[numerical_cols].values).float()
+            X_num = torch.from_numpy(X[numerical_cols].values).float().share_memory_()
             self.n_numerical_cols = X_num.shape[1]
         else:
             self.n_numerical_cols = 0
@@ -310,7 +310,7 @@ class IGANN:
             original_list = [[categorical_cols[i]] * len(encoded_list[i]) for i in range(len(encoded_list))]
 
             self.dummy_encodings = dict(zip(self._flatten(encoded_list), self._flatten(original_list)))
-            X_cat = torch.from_numpy(one_hot_encoded.values).float()
+            X_cat = torch.from_numpy(one_hot_encoded.values).float().share_memory_()
             self.n_categorical_cols = X_cat.shape[1]
             self.feature_names = numerical_cols + list(one_hot_encoded.columns)
         else:
@@ -322,7 +322,7 @@ class IGANN:
             self.sparse = self.n_numerical_cols + self.n_categorical_cols
 
         if self.n_numerical_cols > 0 and self.n_categorical_cols > 0:
-            X = torch.hstack((X_num, X_cat))
+            X = torch.hstack((X_num, X_cat)).share_memory_()
         elif self.n_numerical_cols > 0:
             X = X_num
         else:
@@ -355,7 +355,7 @@ class IGANN:
         if type(y) == pd.Series:
             y = y.values
 
-        y = torch.from_numpy(y.squeeze()).float()
+        y = torch.from_numpy(y.squeeze()).float().share_memory_()
 
         if self.task == 'classification':
             # In the case of targets in {0,1}, transform them to {-1,1} for optimization purposes
@@ -389,10 +389,10 @@ class IGANN:
 
             y_hat = torch.squeeze(
                 torch.from_numpy(self.init_classifier.coef_.astype(np.float32)) @ torch.transpose(X, 0, 1)) + float(
-                self.init_classifier.intercept_)
+                self.init_classifier.intercept_).share_memory_()
             y_hat_val = torch.squeeze(
                 torch.from_numpy(self.init_classifier.coef_.astype(np.float32)) @ torch.transpose(X_val, 0, 1)) + float(
-                self.init_classifier.intercept_)
+                self.init_classifier.intercept_).share_memory_()
 
         else:
             if val_set == None:
@@ -403,8 +403,8 @@ class IGANN:
                 X_val = val_set[0]
                 y_val = val_set[1].squeeze()
 
-            y_hat = torch.from_numpy(self.init_classifier.predict(X).squeeze().astype(np.float32))
-            y_hat_val = torch.from_numpy(self.init_classifier.predict(X_val).squeeze().astype(np.float32))
+            y_hat = torch.from_numpy(self.init_classifier.predict(X).squeeze().astype(np.float32)).share_memory_()
+            y_hat_val = torch.from_numpy(self.init_classifier.predict(X_val).squeeze().astype(np.float32)).share_memory_()
 
         # Store some information about the dataset which we later use for plotting.
         self.X_min = list(X.min(axis=0))
@@ -457,7 +457,7 @@ class IGANN:
         # Sequentially fit one ELM after the other. Max number is stored in self.n_estimators.
         for counter in range(self.n_estimators):
             hessian_train_sqrt = self._loss_sqrt_hessian(y, y_hat)
-            y_tilde = torch.sqrt(torch.tensor(0.5).to(self.device)) * self._get_y_tilde(y, y_hat)
+            y_tilde = torch.sqrt(torch.tensor(0.5).to(self.device)) * self._get_y_tilde(y, y_hat).share_memory_()
             
             # Init ELM
             regressor = ELM_Regressor(n_input=X.shape[1], 
@@ -472,7 +472,7 @@ class IGANN:
             # Fit ELM regressor
             X_hid = regressor.fit(X, y_tilde,
                                 torch.sqrt(torch.tensor(0.5).to(self.device)) * self.boost_rate * hessian_train_sqrt[
-                                                                                                    :, None])
+                                                                                                    :, None]).share_memory_()
 
             # Make a prediction of the ELM for the update of y_hat
             train_regressor_pred = regressor.predict(X_hid, hidden=True).squeeze()
@@ -664,7 +664,7 @@ class IGANN:
         X = self._preprocess_feature_matrix(X, fit_dummies=False).to(self.device)
         X = X[:, self.feature_indizes]
 
-        pred_nn = torch.zeros(len(X), dtype=torch.float32).to(self.device)
+        pred_nn = torch.zeros(len(X), dtype=torch.float32).to(self.device).share_memory_()
         for boost_rate, regressor in zip(self.boosting_rates, self.regressors):
             pred_nn += boost_rate * regressor.predict(X).squeeze()
         pred_nn = pred_nn.detach().cpu().numpy()
@@ -747,7 +747,7 @@ class IGANN:
                             'x': [''.join(val[1].split('_')[1:])],
                             'y': [0], # constant zero value
                             'avg_effect': float(np.mean(get_avg)), # maybe change to 0?
-                            'hist': [[torch.tensor(len_of_num_hist - len_of_other_hists)], [0]]})
+                            'hist': [[torch.tensor(len_of_num_hist - len_of_other_hists).share_memory_()], [0]]})
 
         overall_effect = np.sum([d['avg_effect'] for d in shape_functions])
         for d in shape_functions:
@@ -859,7 +859,7 @@ class IGANN_Bagged:
     def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1, n_bags=3,
                  elm_scale=1, elm_alpha=1, sparse=0, act='elu', early_stopping=50, device='cpu',
                  random_state=1, optimize_threshold=False, verbose=0, n_jobs=1):
-        
+        2
         self.n_bags = n_bags
         self.sparse = sparse
         self.random_state = random_state
@@ -903,6 +903,7 @@ class IGANN_Bagged:
             processes = []
             ctr = 0
             queue = multiprocessing.Queue(len(self.bags))
+            print(f'fitting {len(self.bags)} bags in {self.n_jobs} processes')
             for i, b in enumerate(self.bags):
                 print('#')
                 random_generator = np.random.Generator(np.random.PCG64(self.random_state + i))
@@ -1089,6 +1090,7 @@ if __name__ == '__main__':
     m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
     print(end - start)
+    print(m.predict_proba(X_test))
     m.plot_single(show_n=6)
     
     #####
