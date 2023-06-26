@@ -756,7 +756,7 @@ class IGANN:
 
         return shape_functions
 
-    def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None):
+    def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None, max_cat_plotted=4):
         '''
         This function plots the most important shape functions.
         Parameters:
@@ -786,27 +786,51 @@ class IGANN:
                 d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
             if d['datatype'] == 'categorical':
                 if show_n == 1:
-                    sns.barplot(x=d['x'], y=d['y'], color="darkblue", ax=axs[0])
-
+                    d["y"] = np.array(d['y'])
+                    d['x'] = np.array(d['x'])
                     hist_items = [d['hist'][0][0].item()]
                     hist_items.extend(his[0].item() for his in d['hist'][0][1:])
-                    # TODO current hist returned is like this: [tensor1, [tensor2], [tensor3] ...] (first item not in list)
-                    axs[1].bar(d['hist'][1], hist_items, width=1, color='darkblue')
-                    # axs[1].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
-                    
+
+                    idxs_to_plot = np.argpartition(np.abs(d['y']), -(len(d['y']) - 1) if len(d['y']) <= (max_cat_plotted - 1) else -(max_cat_plotted - 1))[-(max_cat_plotted - 1):]
+                    y_to_plot = d['y'][idxs_to_plot]
+                    x_to_plot = d['x'][idxs_to_plot].tolist()
+                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
+                    if len(d['x']) > max_cat_plotted - 1:
+                        # other classes:
+                        if 'others' in x_to_plot:
+                            x_to_plot.append('others_' + str(np.random.randint(0, 999))) # others or else seem like plausible variable names
+                        else:
+                            x_to_plot.append('others')
+                        y_to_plot = np.append(y_to_plot.flatten(), [[0]]).reshape(max_cat_plotted, )
+                        hist_items_to_plot.append(np.sum([hist_items[i] for i in range(len(hist_items)) if i not in idxs_to_plot]))
+
+                    axs[0].bar(x=x_to_plot, height=y_to_plot, width=.5, color="darkblue")
+                    axs[1].bar(x=x_to_plot, height=hist_items_to_plot, width=1, color="darkblue")
+
                     axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                            d['avg_effect']))
                     axs[0].grid()
                 else:
-                    sns.barplot(x=d['x'], y=d['y'], color="darkblue", ax=axs[0][i])
-
-                    ###
+                    d["y"] = np.array(d['y'])
+                    d['x'] = np.array(d['x'])
                     hist_items = [d['hist'][0][0].item()]
                     hist_items.extend(his[0].item() for his in d['hist'][0][1:])
-                    # TODO current hist returned is like this: [tensor1, [tensor2], [tensor3] ...] (first item not in list)
-                    ###
-                    axs[1][i].bar(d['hist'][1], hist_items, width=1, color='darkblue')
-                    # axs[1][i].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
+
+                    idxs_to_plot = np.argpartition(np.abs(d['y']), -(len(d['y']) - 1) if len(d['y']) <= (max_cat_plotted - 1) else -(max_cat_plotted - 1))[-(max_cat_plotted - 1):]
+                    y_to_plot = d['y'][idxs_to_plot]
+                    x_to_plot = d['x'][idxs_to_plot].tolist()
+                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
+                    if len(d['x']) > max_cat_plotted - 1:
+                        # other classes:
+                        if 'others' in x_to_plot:
+                            x_to_plot.append('others_' + str(np.random.randint(0, 999))) # others or else seem like plausible variable names
+                        else:
+                            x_to_plot.append('others')
+                        y_to_plot = np.append(y_to_plot.flatten(), [[0]]).reshape(max_cat_plotted, )
+                        hist_items_to_plot.append(np.sum([hist_items[i] for i in range(len(hist_items)) if i not in idxs_to_plot]))
+
+                    axs[0][i].bar(x=x_to_plot, height=y_to_plot, width=.5, color="darkblue")
+                    axs[1][i].bar(x=x_to_plot, height=hist_items_to_plot, width=1, color="darkblue")
 
                     axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                               d['avg_effect']))
@@ -902,7 +926,7 @@ class IGANN_Bagged:
             preds.append(b.predict_proba(X))
         return np.array(preds).mean(0), np.array(preds).std(0)
 
-    def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None):
+    def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None, max_cat_plotted=4):
         x_values = dict()
         for i, feat_name in enumerate(self.bags[0].feature_names):
             curr_min = 2147483647
@@ -966,13 +990,24 @@ class IGANN_Bagged:
             y_mean_and_std = np.column_stack((y_mean, y_std))
             if show_n == 1:
                 if d['datatype'] == 'categorical':
-                    # g = sns.barplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0], errorbar="sd", color="darkblue") 
                     hist_items = [d['hist'][0][0].item()]
                     hist_items.extend(his[0].item() for his in d['hist'][0][1:])
 
-                    axs[0].bar(x=d['x'], height=y_mean_and_std[:, 0], width=.5, color="darkblue")
-                    axs[0].errorbar(x=d['x'], y=y_mean_and_std[:, 0], yerr=y_mean_and_std[:, 1], fmt='none', color='black', capsize=5) 
-                    axs[1].bar(x=d['x'], height=hist_items, width=1, color="darkblue")
+                    idxs_to_plot = np.argpartition(np.abs(y_mean_and_std[:,0]), -(len(y_mean_and_std) - 1) if len(y_mean_and_std) <= (max_cat_plotted - 1) else -(max_cat_plotted - 1))[-(max_cat_plotted - 1):]
+                    d_X = [d['x'][i] for i in idxs_to_plot]
+                    y_mean_and_std_to_plot = y_mean_and_std[:, :][idxs_to_plot]
+                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
+                    if len(y_mean_and_std) > max_cat_plotted - 1:
+                        # other classes:
+                        if 'others' in d_X:
+                            d_X.append('others_' + str(np.random.randint(0, 999))) # others or else seem like plausible variable names
+                        else:
+                            d_X.append('others')
+                        y_mean_and_std_to_plot = np.append(y_mean_and_std_to_plot.flatten(), [[0, 0]]).reshape(max_cat_plotted, 2)
+                        hist_items_to_plot.append(np.sum([hist_items[i] for i in range(len(hist_items)) if i not in idxs_to_plot]))
+                    axs[0].bar(x=d_X, height=y_mean_and_std_to_plot[:, 0], width=.5, color="darkblue")
+                    axs[0].errorbar(x=d_X, y=y_mean_and_std_to_plot[:, 0], yerr=y_mean_and_std_to_plot[:, 1], fmt='none', color='black', capsize=5) 
+                    axs[1].bar(x=d_X, height=hist_items_to_plot, width=1, color="darkblue")
                 else: 
                     g = sns.lineplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0], linewidth=2, color="darkblue")
                     g = axs[0].fill_between(x=d['x'], y1=y_mean_and_std[:, 0] - y_mean_and_std[:, 1], y2 = y_mean_and_std[:, 0] + y_mean_and_std[:, 1], color='aqua')
@@ -983,13 +1018,24 @@ class IGANN_Bagged:
                 axs[0].grid()
             else:
                 if d['datatype'] == 'categorical':
-                    # g = sns.barplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0][axs_i], errorbar= "sd", color="darkblue")
                     hist_items = [d['hist'][0][0].item()]
                     hist_items.extend(his[0].item() for his in d['hist'][0][1:])
 
-                    axs[0][axs_i].bar(x=d['x'], height=y_mean_and_std[:, 0], width=.5, color="darkblue")
-                    axs[0][axs_i].errorbar(x=d['x'], y=y_mean_and_std[:, 0], yerr=y_mean_and_std[:, 1], fmt='none', color='black', capsize=5) 
-                    axs[1][axs_i].bar(x=d['x'], height=hist_items, width=1, color="darkblue")
+                    idxs_to_plot = np.argpartition(np.abs(y_mean_and_std[:,0]), -(len(y_mean_and_std) - 1) if len(y_mean_and_std) <= (max_cat_plotted - 1) else -(max_cat_plotted - 1))[-(max_cat_plotted - 1):]
+                    d_X = [d['x'][i] for i in idxs_to_plot]
+                    y_mean_and_std_to_plot = y_mean_and_std[:, :][idxs_to_plot]
+                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
+                    if len(y_mean_and_std) > max_cat_plotted - 1:
+                        # other classes:
+                        if 'others' in d_X:
+                            d_X.append('others_' + str(np.random.randint(0, 999))) # others or else seem like plausible variable names
+                        else:
+                            d_X.append('others')
+                        y_mean_and_std_to_plot = np.append(y_mean_and_std_to_plot.flatten(), [[0, 0]]).reshape(max_cat_plotted, 2)
+                        hist_items_to_plot.append(np.sum([hist_items[i] for i in range(len(hist_items)) if i not in idxs_to_plot]))
+                    axs[0][axs_i].bar(x=d_X, height=y_mean_and_std_to_plot[:, 0], width=.5, color="darkblue")
+                    axs[0][axs_i].errorbar(x=d_X, y=y_mean_and_std_to_plot[:, 0], yerr=y_mean_and_std_to_plot[:, 1], fmt='none', color='black', capsize=5) 
+                    axs[1][axs_i].bar(x=d_X, height=hist_items_to_plot, width=1, color="darkblue")
                 else:
                     g = sns.lineplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0][axs_i], linewidth=2, color="darkblue")
                     g = axs[0][axs_i].fill_between(x=d['x'], y1=y_mean_and_std[:, 0] - y_mean_and_std[:, 1], y2 = y_mean_and_std[:, 0] + y_mean_and_std[:, 1], color='aqua')
@@ -1056,8 +1102,7 @@ if __name__ == '__main__':
     m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
     print(end - start)
-    print(m.predict_proba(X_test))
-    m.plot_single(show_n=6)
+    m.plot_single(show_n=6, max_cat_plotted=4)
     
     #####
     '''
