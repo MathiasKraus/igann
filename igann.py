@@ -750,8 +750,10 @@ class IGANN:
 
         overall_effect = np.sum([d['avg_effect'] for d in shape_functions])
         for d in shape_functions:
-            d['avg_effect'] = d['avg_effect'] / overall_effect * 100
-
+            if overall_effect != 0: 
+                d['avg_effect'] = d['avg_effect'] / overall_effect * 100
+            else:
+                d['avg_effect'] = 0
         shape_functions = self._compress_shape_functions_dict(shape_functions)
 
         return shape_functions
