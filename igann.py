@@ -20,12 +20,32 @@ class GetDummies(BaseEstimator, TransformerMixin):
         self.columns = None
         self.dummy_columns = dummy_columns
 
+        self.cols_per_feat = dict() # should be a list of len=2 for key = categorical_feature_name, val = [[remaining_column_names], dropped_column_name]
+        self._cols_per_feat_needed = True
+
     def fit(self, X, y=None):
+        for c in X.columns:
+            for val in X[c].unique():
+                if c not in self.cols_per_feat.keys():
+                    self.cols_per_feat[c] = []
+                self.cols_per_feat[c].append(str(c+'_'+val))
+        
         self.columns = pd.get_dummies(X, columns=self.dummy_columns, drop_first=True).columns
         return self
 
     def transform(self, X):
-        X_new = pd.get_dummies(X, columns=self.dummy_columns, drop_first=True)
+        X_new = pd.get_dummies(X, columns=self.dummy_columns , drop_first=True)
+
+        if self._cols_per_feat_needed:
+            for key, val in self.cols_per_feat.items():
+                curr = [[], '']
+                for v in val:
+                    if v not in X_new.columns:
+                        curr[1] = v
+                    else:
+                        curr[0].append(v)
+                self.cols_per_feat[key] = curr
+            self._cols_per_feat_needed = False
         return X_new.reindex(columns=self.columns, fill_value=0)
 
 class torch_Ridge():
@@ -309,7 +329,7 @@ class IGANN:
 
         return X
 
-    def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None):
+    def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None, fitted_dummies=None):
         '''
         This function fits the model on training data (X, y).
         Parameters:
@@ -324,7 +344,12 @@ class IGANN:
 
         self._reset_state()
 
-        X = self._preprocess_feature_matrix(X, fit_dummies=True)
+        if fitted_dummies != None:
+            self.get_dummies = fitted_dummies
+            X = self._preprocess_feature_matrix(X, fit_dummies=False)
+
+        else:
+            X = self._preprocess_feature_matrix(X, fit_dummies=True)
 
         if type(y) == pd.Series:
             y = y.values
@@ -653,8 +678,11 @@ class IGANN:
     def _split_long_titles(self, l):
         return '\n'.join(l[p:p + 22] for p in range(0, len(l), 22))
 
-    def _get_pred_of_i(self, i):
-        feat_values = self.unique[i]
+    def _get_pred_of_i(self, i, x_values=None):
+        if x_values == None:
+            feat_values = self.unique[i]
+        else:
+            feat_values = x_values[i]
         if self.task == 'classification':
             pred = self.init_classifier.coef_[0, i] * feat_values
         else:
@@ -680,11 +708,11 @@ class IGANN:
         
         return [v for k, v in shape_functions_compressed.items()]
 
-    def get_shape_functions_as_dict(self):
+    def get_shape_functions_as_dict(self, x_values=None):
         shape_functions = []
         for i, feat_name in enumerate(self.feature_names):
             datatype = 'numerical' if i < self.n_numerical_cols else 'categorical'
-            feat_values, pred = self._get_pred_of_i(i)
+            feat_values, pred = self._get_pred_of_i(i, x_values)
             if datatype == 'numerical':
                 shape_functions.append(
                     {'name': feat_name, 
@@ -702,15 +730,35 @@ class IGANN:
                     'avg_effect': float(torch.mean(torch.abs(pred))),
                     'hist': [[self.hist[i][0][-1]], [0]]})
 
+        if sum(1 for elem in shape_functions if elem['datatype'] == 'categorical') > 0:
+            if shape_functions[0]['datatype'] == 'numerical':
+                len_of_num_hist = np.sum(np.array(shape_functions[0]['hist'][0]))
+                for key, val in self.get_dummies.cols_per_feat.items():
+                    get_avg = []
+                    len_of_other_hists = 0
+                    for sf in shape_functions:
+                        if key == sf['name']:
+                            get_avg.append(sf['avg_effect'])
+                            len_of_other_hists += sf['hist'][0][0].item()
+                    shape_functions.append(
+                            {'name': key, 
+                            'datatype': 'categorical',
+                            'x': [''.join(val[1].split('_')[1:])],
+                            'y': [0], # constant zero value
+                            'avg_effect': float(np.mean(get_avg)), # maybe change to 0?
+                            'hist': [[torch.tensor(len_of_num_hist - len_of_other_hists)], [0]]})
+
         overall_effect = np.sum([d['avg_effect'] for d in shape_functions])
         for d in shape_functions:
-            d['avg_effect'] = d['avg_effect'] / overall_effect * 100
-
+            if overall_effect != 0: 
+                d['avg_effect'] = d['avg_effect'] / overall_effect * 100
+            else:
+                d['avg_effect'] = 0
         shape_functions = self._compress_shape_functions_dict(shape_functions)
 
         return shape_functions
 
-    def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None):
+    def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None, max_cat_plotted=4):
         '''
         This function plots the most important shape functions.
         Parameters:
@@ -740,14 +788,52 @@ class IGANN:
                 d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
             if d['datatype'] == 'categorical':
                 if show_n == 1:
-                    sns.barplot(x=d['x'], y=d['y'], color="darkblue", ax=axs[0])
-                    axs[1].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
+                    d["y"] = np.array(d['y'])
+                    d['x'] = np.array(d['x'])
+                    hist_items = [d['hist'][0][0].item()]
+                    hist_items.extend(his[0].item() for his in d['hist'][0][1:])
+
+                    idxs_to_plot = np.argpartition(np.abs(d['y']), -(len(d['y']) - 1) if len(d['y']) <= (max_cat_plotted - 1) else -(max_cat_plotted - 1))[-(max_cat_plotted - 1):]
+                    y_to_plot = d['y'][idxs_to_plot]
+                    x_to_plot = d['x'][idxs_to_plot].tolist()
+                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
+                    if len(d['x']) > max_cat_plotted - 1:
+                        # other classes:
+                        if 'others' in x_to_plot:
+                            x_to_plot.append('others_' + str(np.random.randint(0, 999))) # others or else seem like plausible variable names
+                        else:
+                            x_to_plot.append('others')
+                        y_to_plot = np.append(y_to_plot.flatten(), [[0]]).reshape(max_cat_plotted, )
+                        hist_items_to_plot.append(np.sum([hist_items[i] for i in range(len(hist_items)) if i not in idxs_to_plot]))
+
+                    axs[0].bar(x=x_to_plot, height=y_to_plot, width=.5, color="darkblue")
+                    axs[1].bar(x=x_to_plot, height=hist_items_to_plot, width=1, color="darkblue")
+
                     axs[0].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                            d['avg_effect']))
                     axs[0].grid()
                 else:
-                    sns.barplot(x=d['x'], y=d['y'], color="darkblue", ax=axs[0][i])
-                    axs[1][i].bar(d['hist'][1], d['hist'][0], width=1, color='darkblue')
+                    d["y"] = np.array(d['y'])
+                    d['x'] = np.array(d['x'])
+                    hist_items = [d['hist'][0][0].item()]
+                    hist_items.extend(his[0].item() for his in d['hist'][0][1:])
+
+                    idxs_to_plot = np.argpartition(np.abs(d['y']), -(len(d['y']) - 1) if len(d['y']) <= (max_cat_plotted - 1) else -(max_cat_plotted - 1))[-(max_cat_plotted - 1):]
+                    y_to_plot = d['y'][idxs_to_plot]
+                    x_to_plot = d['x'][idxs_to_plot].tolist()
+                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
+                    if len(d['x']) > max_cat_plotted - 1:
+                        # other classes:
+                        if 'others' in x_to_plot:
+                            x_to_plot.append('others_' + str(np.random.randint(0, 999))) # others or else seem like plausible variable names
+                        else:
+                            x_to_plot.append('others')
+                        y_to_plot = np.append(y_to_plot.flatten(), [[0]]).reshape(max_cat_plotted, )
+                        hist_items_to_plot.append(np.sum([hist_items[i] for i in range(len(hist_items)) if i not in idxs_to_plot]))
+
+                    axs[0][i].bar(x=x_to_plot, height=y_to_plot, width=.5, color="darkblue")
+                    axs[1][i].bar(x=x_to_plot, height=hist_items_to_plot, width=1, color="darkblue")
+
                     axs[0][i].set_title('{}:\n{:.2f}%'.format(self._split_long_titles(d['name']),
                                                               d['avg_effect']))
                     axs[0][i].grid()
@@ -793,6 +879,185 @@ class IGANN:
         plt.show()
 
 
+
+class IGANN_Bagged:
+    def __init__(self, task='classification', n_hid=10, n_estimators=5000, boost_rate=0.1, init_reg=1, n_bags=3,
+                 elm_scale=1, elm_alpha=1, sparse=0, act='elu', early_stopping=50, device='cpu',
+                 random_state=1, optimize_threshold=False, verbose=0):
+        2
+        self.n_bags = n_bags
+        self.sparse = sparse
+        self.random_state = random_state
+        self.bags = [IGANN(task, n_hid, n_estimators, boost_rate, init_reg, elm_scale, elm_alpha, sparse, act, early_stopping, device, random_state + i, optimize_threshold, verbose=verbose) for i in range(n_bags)]
+
+    def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None):
+        X.columns = [str(c) for c in X.columns]
+        X = X.reindex(sorted(X.columns), axis=1)
+        categorical_cols = sorted(X.select_dtypes(include=['category', 'object']).columns.tolist())
+        numerical_cols = sorted(list(set(X.columns) - set(categorical_cols)))
+
+        if len(numerical_cols) > 0:
+            X_num = torch.from_numpy(X[numerical_cols].values).float()
+            self.n_numerical_cols = X_num.shape[1]
+        else:
+            self.n_numerical_cols = 0
+
+        if len(categorical_cols) > 0:
+            get_dummies = GetDummies(categorical_cols)
+            get_dummies.fit(X[categorical_cols])
+        else:
+            get_dummies = None
+
+        ctr = 0
+        for b in self.bags:
+            print('#')
+            random_generator = np.random.Generator(np.random.PCG64(self.random_state + ctr))
+            ctr += 1
+            idx = random_generator.choice(np.arange(len(X)), len(X))
+            b.fit(X.iloc[idx], np.array(y)[idx], val_set, eval, fitted_dummies=get_dummies)           
+
+    def predict(self, X):
+        preds = []
+        for b in self.bags:
+            preds.append(b.predict(X))
+        return np.array(preds).mean(0), np.array(preds).std(0)
+
+    def predict_proba(self, X):
+        preds = []
+        for b in self.bags:
+            preds.append(b.predict_proba(X))
+        return np.array(preds).mean(0), np.array(preds).std(0)
+
+    def plot_single(self, plot_by_list=None, show_n=5, scaler_dict=None, max_cat_plotted=4):
+        x_values = dict()
+        for i, feat_name in enumerate(self.bags[0].feature_names):
+            curr_min = 2147483647
+            curr_max = -2147483646
+            most_unique = 0
+            for b in self.bags:
+                if b.X_min[0][i] < curr_min:
+                    curr_min = b.X_min[0][i]
+                if b.X_max[0][i] > curr_max:
+                    curr_max = b.X_max[0][i]
+                if len(b.unique[i]) > most_unique:
+                    most_unique = len(b.unique[i])
+            x_values[i] = torch.from_numpy(np.arange(curr_min, curr_max, 1. / most_unique)).float()
+
+        shape_functions = [b.get_shape_functions_as_dict(x_values=x_values) for b in self.bags]
+
+        avg_effects = {}
+        for sf in shape_functions:
+            for feat_d in sf:
+                if feat_d['name'] in avg_effects:
+                    avg_effects[feat_d['name']].append(feat_d['avg_effect'])
+                else:
+                    avg_effects[feat_d['name']] = [feat_d['avg_effect']]
+        
+        for k, v in avg_effects.items():
+            avg_effects[k] = np.mean(v)
+
+        for sf in shape_functions:
+            for feat_d in sf:
+                feat_d['avg_effect'] = avg_effects[feat_d['name']]
+
+        if plot_by_list is None:
+            top_k = [d for d in sorted(shape_functions[0], reverse=True, key=lambda x: x['avg_effect'])][:show_n]
+            show_n = min(show_n, len(top_k))
+        else:
+            top_k = [d for d in sorted(shape_functions[0], reverse=True, key=lambda x: x['avg_effect'])]
+            show_n = len(plot_by_list)
+
+        plt.close(fig="Shape functions")
+        fig, axs = plt.subplots(2, show_n, figsize=(14, 4),
+                                gridspec_kw={'height_ratios': [5, 1]},
+                                num="Shape functions")
+        plt.subplots_adjust(wspace=0.4)
+
+        axs_i = 0
+        for d in top_k:
+            if plot_by_list is not None and d['name'] not in plot_by_list:
+                continue
+            if scaler_dict:
+                for sf in shape_functions:
+                    d['x'] = scaler_dict[d['name']].inverse_transform(d['x'].reshape(-1, 1)).squeeze()
+            y_l = []
+            for sf in shape_functions:
+                for feat in sf:
+                    if d['name'] == feat['name']:
+                        y_l.append(np.array(feat['y']))
+                    else:
+                        continue
+            y_mean = np.mean(y_l, axis=0)
+            y_std = np.std(y_l, axis=0)
+            y_mean_and_std = np.column_stack((y_mean, y_std))
+            if show_n == 1:
+                if d['datatype'] == 'categorical':
+                    hist_items = [d['hist'][0][0].item()]
+                    hist_items.extend(his[0].item() for his in d['hist'][0][1:])
+
+                    idxs_to_plot = np.argpartition(np.abs(y_mean_and_std[:,0]), -(len(y_mean_and_std) - 1) if len(y_mean_and_std) <= (max_cat_plotted - 1) else -(max_cat_plotted - 1))[-(max_cat_plotted - 1):]
+                    d_X = [d['x'][i] for i in idxs_to_plot]
+                    y_mean_and_std_to_plot = y_mean_and_std[:, :][idxs_to_plot]
+                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
+                    if len(y_mean_and_std) > max_cat_plotted - 1:
+                        # other classes:
+                        if 'others' in d_X:
+                            d_X.append('others_' + str(np.random.randint(0, 999))) # others or else seem like plausible variable names
+                        else:
+                            d_X.append('others')
+                        y_mean_and_std_to_plot = np.append(y_mean_and_std_to_plot.flatten(), [[0, 0]]).reshape(max_cat_plotted, 2)
+                        hist_items_to_plot.append(np.sum([hist_items[i] for i in range(len(hist_items)) if i not in idxs_to_plot]))
+                    axs[0].bar(x=d_X, height=y_mean_and_std_to_plot[:, 0], width=.5, color="darkblue")
+                    axs[0].errorbar(x=d_X, y=y_mean_and_std_to_plot[:, 0], yerr=y_mean_and_std_to_plot[:, 1], fmt='none', color='black', capsize=5) 
+                    axs[1].bar(x=d_X, height=hist_items_to_plot, width=1, color="darkblue")
+                else: 
+                    g = sns.lineplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0], linewidth=2, color="darkblue")
+                    g = axs[0].fill_between(x=d['x'], y1=y_mean_and_std[:, 0] - y_mean_and_std[:, 1], y2 = y_mean_and_std[:, 0] + y_mean_and_std[:, 1], color='aqua')
+                    axs[1].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                axs[0].axhline(y=0, color="grey", linestyle="--")
+                axs[0].set_title('{}:\n{:.2f}%'.format(self.bags[0]._split_long_titles(d['name']),
+                                                        d['avg_effect']))
+                axs[0].grid()
+            else:
+                if d['datatype'] == 'categorical':
+                    hist_items = [d['hist'][0][0].item()]
+                    hist_items.extend(his[0].item() for his in d['hist'][0][1:])
+
+                    idxs_to_plot = np.argpartition(np.abs(y_mean_and_std[:,0]), -(len(y_mean_and_std) - 1) if len(y_mean_and_std) <= (max_cat_plotted - 1) else -(max_cat_plotted - 1))[-(max_cat_plotted - 1):]
+                    d_X = [d['x'][i] for i in idxs_to_plot]
+                    y_mean_and_std_to_plot = y_mean_and_std[:, :][idxs_to_plot]
+                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
+                    if len(y_mean_and_std) > max_cat_plotted - 1:
+                        # other classes:
+                        if 'others' in d_X:
+                            d_X.append('others_' + str(np.random.randint(0, 999))) # others or else seem like plausible variable names
+                        else:
+                            d_X.append('others')
+                        y_mean_and_std_to_plot = np.append(y_mean_and_std_to_plot.flatten(), [[0, 0]]).reshape(max_cat_plotted, 2)
+                        hist_items_to_plot.append(np.sum([hist_items[i] for i in range(len(hist_items)) if i not in idxs_to_plot]))
+                    axs[0][axs_i].bar(x=d_X, height=y_mean_and_std_to_plot[:, 0], width=.5, color="darkblue")
+                    axs[0][axs_i].errorbar(x=d_X, y=y_mean_and_std_to_plot[:, 0], yerr=y_mean_and_std_to_plot[:, 1], fmt='none', color='black', capsize=5) 
+                    axs[1][axs_i].bar(x=d_X, height=hist_items_to_plot, width=1, color="darkblue")
+                else:
+                    g = sns.lineplot(x=d['x'], y=y_mean_and_std[:, 0], ax=axs[0][axs_i], linewidth=2, color="darkblue")
+                    g = axs[0][axs_i].fill_between(x=d['x'], y1=y_mean_and_std[:, 0] - y_mean_and_std[:, 1], y2 = y_mean_and_std[:, 0] + y_mean_and_std[:, 1], color='aqua')
+                    axs[1][axs_i].bar(d['hist'][1][:-1], d['hist'][0], width=1, color='darkblue')
+                axs[0][axs_i].axhline(y=0, color="grey", linestyle="--")
+                axs[0][axs_i].set_title('{}:\n{:.2f}%'.format(self.bags[0]._split_long_titles(d['name']),
+                                                            d['avg_effect']))
+                axs[0][axs_i].grid()
+            axs_i += 1
+
+        if show_n == 1:
+            axs[1].get_xaxis().set_visible(False)
+            axs[1].get_yaxis().set_visible(False)
+        else:
+            for i in range(show_n):
+                axs[1][i].get_xaxis().set_visible(False)
+                axs[1][i].get_yaxis().set_visible(False)
+        plt.show()
+        
+
 if __name__ == '__main__':
     from sklearn.datasets import make_circles, make_regression
     '''
@@ -825,21 +1090,21 @@ if __name__ == '__main__':
 
     ######
     '''
-    X, y = make_regression(100000, 10, n_informative=3)
-    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    X, y = make_regression(1000, 4, n_informative=4, random_state=42)
+    X = pd.DataFrame(X)
+    X['cat_test'] = np.random.choice(['A', 'B', 'C', 'D'], X.shape[0], p=[0.2, 0.2, 0.1, 0.5])
+    X['cat_test_2'] = np.random.choice(['E', 'F', 'G', 'H'], X.shape[0], p=[0.2, 0.2, 0.1, 0.5])
+    X_train, X_test, y_train, y_test = train_test_split(X, y,random_state=42)
     y_mean, y_std = y_train.mean(), y_train.std()
     y_train = (y_train - y_mean) / y_std
     y_test = (y_test - y_mean) / y_std
     start = time.time()
-    m = IGANN(task='regression', n_estimators=1000, sparse=10, verbose=1)
+    m = IGANN_Bagged(task='regression', n_estimators=100, verbose=0, n_bags=5) #, device='cuda'
+    # m = IGANN(task='regression', n_estimators=100, verbose=0)
     m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
     print(end - start)
-    m.plot_single()
-
-    print(np.mean((m.predict(X_train) - y_train)**2))
-    print(np.mean((m.predict(X_test) - y_test)**2))
-    sns.scatterplot(x=m.predict(X_train)[:1000], y=y_train[:1000])
+    m.plot_single(show_n=6, max_cat_plotted=4)
     
     #####
     '''
