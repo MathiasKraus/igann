@@ -11,6 +11,8 @@ from sklearn.metrics import f1_score, mean_squared_error
 
 import numpy as np
 
+import torch
+
 def test_sparse_igann():
     X, y = make_regression(100000, 10, n_informative=3, random_state=0)
     y = (y - y.mean()) / y.std()
@@ -488,3 +490,96 @@ def test_regression_plot_learning():
 
 #     result = compare_images(baseline, path, tol=0.03)
 #     assert (result == None)
+
+def test_cat_variables():
+    X, y = make_regression(100, 10, n_informative=3, random_state=0)
+    y = (y - y.mean()) / y.std()
+    X = pd.DataFrame(X)
+    X['cat_test'] = np.random.choice(['A', 'B', 'C', 'D'], X.shape[0], p=[0.2, 0.2, 0.1, 0.5])
+    m = igann.IGANN(task='regression', n_estimators=1000)
+    m.fit(pd.DataFrame(X), y)
+    assert m.n_categorical_cols == 3
+    assert m.n_numerical_cols == 10
+
+def test_igann_dummies_for_cat_with_nans():
+    X, y = make_regression(100, 10, n_informative=3, random_state=0)
+    y = (y - y.mean()) / y.std()
+    X = pd.DataFrame(X)
+    X['cat_test'] = np.random.choice(['A', 'B', 'C', 'D', np.nan], X.shape[0], p=[0.2, 0.2, 0.1, 0.3, 0.2])
+    m = igann.IGANN(task='regression', n_estimators=1000)
+    m.fit(pd.DataFrame(X), y)
+    assert m.n_categorical_cols == 4
+    assert m.n_numerical_cols == 10
+    assert len(m.feature_names) == 14
+    X['cat_test'] = np.random.choice(['A', 'B', 'C', np.nan], X.shape[0], p=[0.2, 0.2, 0.1, 0.5])
+    m = igann.IGANN(task='regression', n_estimators=1000)
+    m.fit(pd.DataFrame(X), y)
+    assert m.n_categorical_cols == 3
+    assert m.n_numerical_cols == 10
+    assert len(m.feature_names) == 13
+
+def test_torch_ridge():
+    device="cpu"
+    X = torch.tensor([[0.4259, 0.6296, 0.7241, 0.1714, 0.6942],
+                      [0.4327, 0.9518, 0.5472, 0.7580, 0.6477],
+                      [0.9833, 0.9742, 0.4205, 0.7979, 0.9641],
+                      [0.7738, 0.0795, 0.4846, 0.6665, 0.8383],
+                      [0.2489, 0.8715, 0.3307, 0.0499, 0.5630]])
+    y = torch.tensor([0.5545, 0.8965, 0.6915, 0.7395, 0.3370])
+    ridge = igann.torch_Ridge(alpha=0.0001, device=device)
+    ridge.fit(X,y)
+    X_test = torch.tensor([0.2581, 0.6990, 0.3861, 0.6054, 0.8429])
+    pred = ridge.predict(X_test)
+    assert isinstance(pred.item(), float)
+    assert (round(pred.item(), 4) == 1.0188)
+    ridge = igann.torch_Ridge(alpha=0.001, device=device)
+    ridge.fit(X,y)
+    pred = ridge.predict(X_test)
+    assert (round(pred.item(), 4) == 0.9917)
+
+def test_elm():
+    X = torch.tensor([[-1.3496,  0.1114,  0.0340, -0.4152,  0.0000,  0.0000,  0.0000,  0.0000,
+            0.0000,  1.0000],
+            [ 0.8577, -1.0025, -0.0190, -0.1599,  0.0000,  0.0000,  1.0000,  0.0000,
+            0.0000,  1.0000],
+            [ 0.2599, -1.3205, -1.2370,  0.7818,  1.0000,  0.0000,  0.0000,  1.0000,
+            0.0000,  0.0000],
+            [-1.7787, -0.0556,  0.6544,  1.4960,  1.0000,  0.0000,  0.0000,  0.0000,
+            0.0000,  1.0000],
+            [-1.4063,  0.7601, -1.5047, -0.0831,  0.0000,  0.0000,  1.0000,  0.0000,
+            0.0000,  1.0000]])
+    y = torch.tensor([-0.4383, -0.0506, -1.3534, -0.0438, -1.4075])
+    elm = igann.ELM_Regressor(X.shape[1], 6, X.shape[1], seed=0, scale=10, 
+                 elm_alpha=0.0001, act='elu', device='cpu')
+    elm.fit(X, y, torch.sqrt(torch.tensor(0.5) * 0.1 * 1))
+    X_test = torch.tensor([[-1.3496,-1.0025, -1.3205, 0.7601, 1.0,  0.0,  0.0, 1.0, 0.0, 0.0]])
+    pred = elm.predict(X_test)
+    assert (round(pred.item(), 4) == -7.8120)
+
+def test_igann_bagged():
+    X, y = make_regression(1000, 4, n_informative=4, random_state=42)
+    X = pd.DataFrame(X)
+    X['cat_test'] = np.random.choice(['A', 'B', 'C', 'D'], X.shape[0], p=[0.2, 0.2, 0.1, 0.5])
+    X['cat_test_2'] = np.random.choice(['E', 'F', 'G', 'H'], X.shape[0], p=[0.2, 0.2, 0.1, 0.5])
+    X_train, X_test, y_train, y_test = train_test_split(X, y,random_state=42)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
+    m = igann.IGANN_Bagged(task='regression', n_estimators=100, verbose=0, n_bags=5)
+    m.fit(pd.DataFrame(X_train), y_train)
+    m.plot_single(show_n=6, max_cat_plotted=4)
+    pred = m.predict(X_test)
+    pred_proba = m.predict_proba(X_test)
+    assert isinstance(pred, tuple)
+    assert isinstance(pred_proba, tuple)
+    assert isinstance(pred[0], np.ndarray)
+    assert isinstance(pred_proba[0], np.ndarray)
+    assert isinstance(pred[1], np.ndarray)
+    assert isinstance(pred_proba[1], np.ndarray)
+    assert len(pred) == 2
+    assert len(pred_proba) == 2
+    assert pred[0].shape[0] == len(X_test)
+    assert pred_proba[0].shape[0] == len(X_test)
+    assert pred[1].shape[0] == len(X_test)
+    assert pred_proba[1].shape[0] == len(X_test)
+    assert len(m.bags) == 5
