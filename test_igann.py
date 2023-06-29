@@ -360,31 +360,31 @@ def test_regression_plot_learning():
 
     model.plot_learning()
 
-#def test_classification_plot_single_w_baseline():
-#    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+def test_classification_plot_single_w_baseline():
+   X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
-#    scaler = StandardScaler()
+   scaler = StandardScaler()
 
-#    X_names = X.columns
+   X_names = X.columns
 
-#    X = scaler.fit_transform(X)
+   X = scaler.fit_transform(X)
 
-#    X = pd.DataFrame(X, columns=X_names)
+   X = pd.DataFrame(X, columns=X_names)
 
-#    model = igann.IGANN(random_state=42) # interactions=0, 
+   model = igann.IGANN(random_state=42) # interactions=0, 
 
-#    model.fit(X, y)
+   model.fit(X, y)
 
-#    model.plot_single()
+   model.plot_single()
 
-#    baseline = "baseline/baseline_class_plot_single.png"
+   baseline = "baseline/baseline_class_plot_single.png"
 
-#    path = "temp_class_plot_single.png"
+   path = "temp_class_plot_single.png"
 
-#    plt.gcf().savefig(path)
+   plt.gcf().savefig(path)
 
-#    result = compare_images(baseline, path, tol=0.01)
-#    assert (result == None)
+   result = compare_images(baseline, path, tol=0.01)
+   assert (result == None)
 
 # def test_classification_plot_interactions_w_baseline():
 #     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
@@ -438,7 +438,7 @@ def test_regression_plot_learning():
 #     result = compare_images(baseline, path, tol=0.01)
 #     assert (result == None)
 
-#def test_regression_plot_single_w_baseline():
+# def test_regression_plot_single_w_baseline():
 #    X, y = load_diabetes(return_X_y=True, as_frame=True)
 
 #    scaler = StandardScaler()
@@ -462,7 +462,7 @@ def test_regression_plot_learning():
 
 #    plt.gcf().savefig(path)
 
-#    result = compare_images(baseline, path, tol=0.03)
+#    result = compare_images(baseline, path, tol=0.05)
 #    assert (result == None)
     
 # def test_regression_plot_interactions_w_baseline():
@@ -490,6 +490,7 @@ def test_regression_plot_learning():
 
 #     result = compare_images(baseline, path, tol=0.03)
 #     assert (result == None)
+
 
 def test_cat_variables():
     X, y = make_regression(100, 10, n_informative=3, random_state=0)
@@ -583,3 +584,155 @@ def test_igann_bagged():
     assert pred[1].shape[0] == len(X_test)
     assert pred_proba[1].shape[0] == len(X_test)
     assert len(m.bags) == 5
+
+def test_parameters_n_hid():
+    X, y = make_regression(10000, 10, n_informative=3)
+    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
+
+    model = igann.IGANN(task='regression')
+    assert (model.n_hid == 10) # If this fails, maybe the default value has changed
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (model.regressors[0].n_hid == 10) # If this fails, maybe the default value has changed
+
+    model = igann.IGANN(task='regression', n_hid=15)
+    assert (model.n_hid == 15)
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (model.regressors[0].n_hid == 15)
+
+    model = igann.IGANN(task='regression', n_hid=5)
+    assert (model.n_hid == 5)
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (model.regressors[0].n_hid == 5)
+
+def test_parameters_n_estimators():
+    X, y = make_regression(10000, 10, n_informative=3)
+    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
+
+    model = igann.IGANN(task='regression')
+    assert (model.n_estimators == 5000) # If this fails, maybe the default value has changed
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (len(model.regressors) <= 5000)
+
+    model = igann.IGANN(task='regression', n_estimators=10000)
+    assert (model.n_estimators == 10000)
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (len(model.regressors) <= 10000)
+
+    model = igann.IGANN(task='regression', n_estimators=200)
+    assert (model.n_estimators == 200)
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (len(model.regressors) <= 200)
+
+def test_parameters_boost_rate():
+    model = igann.IGANN(task='regression')
+    assert (model.boost_rate == .1) # If this fails, maybe the default value has changed
+
+    model = igann.IGANN(task='regression', boost_rate=0.3)
+    assert (model.boost_rate == .3)
+
+    model = igann.IGANN(task='regression', boost_rate=0.01)
+    assert (model.boost_rate == .01)
+
+def test_parameters_init_reg():
+    X, y = make_regression(10000, 10, n_informative=3)
+    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
+
+    model = igann.IGANN(task='regression')
+    assert (model.init_reg == 1) # If this fails, maybe the default value has changed
+
+    model = igann.IGANN(task='regression', init_reg=3)
+    assert (model.init_reg == 3)
+
+    model = igann.IGANN(task='regression', init_reg=0.1)
+    assert (model.init_reg == 0.1)
+
+def test_parameters_elm_scale():
+    X, y = make_regression(10000, 10, n_informative=3)
+    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
+
+    model = igann.IGANN(task='regression')
+    assert (model.elm_scale == 1) # If this fails, maybe the default value has changed
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (model.regressors[0].elm_scale == 1)
+
+    model = igann.IGANN(task='regression', elm_scale=3)
+    assert (model.elm_scale == 3)
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (model.regressors[0].elm_scale == 3)
+
+    model = igann.IGANN(task='regression', elm_scale=0.1)
+    assert (model.elm_scale == 0.1)
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (model.regressors[0].elm_scale == 0.1)
+
+def test_parameters_elm_alpha():
+    X, y = make_regression(10000, 10, n_informative=3)
+    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
+
+    model = igann.IGANN(task='regression')
+    assert (model.elm_alpha == 1) # If this fails, maybe the default value has changed
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (model.regressors[0].elm_alpha == 1)
+
+    model = igann.IGANN(task='regression', elm_alpha=3)
+    assert (model.elm_alpha == 3)
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (model.regressors[0].elm_alpha == 3)
+
+    model = igann.IGANN(task='regression', elm_alpha=0.1)
+    assert (model.elm_alpha == 0.1)
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert (model.regressors[0].elm_alpha == 0.1)
+
+def test_parameters_act():
+    X, y = make_regression(10000, 10, n_informative=3)
+    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
+
+    model = igann.IGANN(task='regression')
+    assert (model.act == "elu") # If this fails, maybe the default value has changed
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert isinstance(model.regressors[0].act, torch.nn.ELU)
+
+    model = igann.IGANN(task='regression', act="relu")
+    assert (model.act == "relu")
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert isinstance(model.regressors[0].act, torch.nn.ReLU)
+
+    model = igann.IGANN(task='regression', act=torch.nn.Tanh())
+    assert isinstance(model.act, torch.nn.Tanh)
+    model.fit(pd.DataFrame(X_train), y_train)
+    assert isinstance(model.regressors[0].act, torch.nn.Tanh)
+
+def test_parameters_early_stopping():
+    X, y = make_regression(10000, 10, n_informative=3)
+    X_train, X_test, y_train, y_test = train_test_split(X, y)
+    y_mean, y_std = y_train.mean(), y_train.std()
+    y_train = (y_train - y_mean) / y_std
+    y_test = (y_test - y_mean) / y_std
+
+    model = igann.IGANN(task='regression')
+    assert (model.early_stopping == 50) # If this fails, maybe the default value has changed
+
+    model = igann.IGANN(task='regression', early_stopping=20)
+    assert (model.early_stopping == 20)
+
+    model = igann.IGANN(task='regression', early_stopping=100)
+    assert (model.early_stopping == 100)
