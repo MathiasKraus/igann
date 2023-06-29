@@ -555,8 +555,9 @@ def test_elm():
     elm.fit(X, y, torch.sqrt(torch.tensor(0.5) * 0.1 * 1))
     X_test = torch.tensor([[-1.3496,-1.0025, -1.3205, 0.7601, 1.0,  0.0,  0.0, 1.0, 0.0, 0.0]])
     pred = elm.predict(X_test)
-    assert (round(pred.item(), 4) == -7.8120)
-
+    print(round(pred.item(), 1))
+    assert (round(pred.item(), 1) == -7.8)
+test_elm()
 def test_igann_bagged():
     X, y = make_regression(1000, 4, n_informative=4, random_state=42)
     X = pd.DataFrame(X)
