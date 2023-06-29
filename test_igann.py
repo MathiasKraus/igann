@@ -550,7 +550,7 @@ def test_elm():
             [-1.4063,  0.7601, -1.5047, -0.0831,  0.0000,  0.0000,  1.0000,  0.0000,
             0.0000,  1.0000]])
     y = torch.tensor([-0.4383, -0.0506, -1.3534, -0.0438, -1.4075])
-    elm = igann.ELM_Regressor(X.shape[1], 6, X.shape[1], seed=0, scale=10, 
+    elm = igann.ELM_Regressor(X.shape[1], 6, X.shape[1], seed=0, elm_scale=10, 
                  elm_alpha=0.0001, act='elu', device='cpu')
     elm.fit(X, y, torch.sqrt(torch.tensor(0.5) * 0.1 * 1))
     X_test = torch.tensor([[-1.3496,-1.0025, -1.3205, 0.7601, 1.0,  0.0,  0.0, 1.0, 0.0, 0.0]])
