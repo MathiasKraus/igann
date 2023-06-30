@@ -351,7 +351,7 @@ class IGANN:
         else:
             X = self._preprocess_feature_matrix(X, fit_dummies=True)
 
-        if type(y) == pd.Series:
+        if type(y) == pd.Series or type(y) == pd.DataFrame:
             y = y.values
 
         y = torch.from_numpy(y.squeeze()).float()
