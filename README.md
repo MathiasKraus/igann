@@ -104,6 +104,16 @@ yields (note that the sparse parameters denotes the max number of features)
 
 ![image](https://github.com/MathiasKraus/igann/assets/15181429/1ef6a099-4e09-471a-9e6f-da955dbff23d)
 
+# Citations
+```latex
+@article{kraus2023interpretable,
+  title={Interpretable Generalized Additive Neural Networks},
+  author={Kraus, Mathias and Tschernutter, Daniel and Weinzierl, Sven and Zschech, Patrick},
+  journal={European Journal of Operational Research},
+  year={2023},
+  publisher={Elsevier}
+}
+```
 
 
 
