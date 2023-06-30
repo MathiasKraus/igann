@@ -7,7 +7,7 @@ setup(
     name='igann',
     version='0.1.0',
     author='Mathias Kraus',
-    author_email='mathias.kraus@fau.de',
+    author_email='mathias.sebastian.kraus@gmail.com',
     description='Implementation of Interpretable Generalized Additive Neural Networks',
     long_description=long_description,
     long_description_content_type='text/markdown',
