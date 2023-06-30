@@ -60,6 +60,7 @@ When initializing IGANN, the following parameters can be set:
 
 In the following, we use the common diabetes dataset from sklearn (https://scikit-learn.org/0.16/modules/generated/sklearn.datasets.load_diabetes.html). After loading the dataset via
 
+
 ```
 X, y = load_diabetes(return_X_y=True, as_frame=True)
 scaler = StandardScaler()
@@ -77,6 +78,7 @@ y = (y - y.mean()) / y.std()
 
 we can simply initialize and fit IGANN with
 ```
+from igann import IGANN
 model = IGANN(task='regression')
 model.fit(X, y)
 ```
@@ -95,6 +97,7 @@ we obtain the following shape functions
 In many cases, it makes sense to train a sparse IGANN model, i.e., a model which only basis its output on few features. This generally increases the ease of understanding the model behavior.
 
 ```
+from igann import IGANN
 model = IGANN(task='regression', sparse=5)
 model.fit(X, y)
 model.plot_single()
