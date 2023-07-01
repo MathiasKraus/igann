@@ -5,15 +5,26 @@ from copy import deepcopy
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.linear_model import LogisticRegression, Lasso
+#from sklearn.linear_model import LogisticRegression, Lasso
 from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeRegressor
+from scipy.optimize import Bounds
 import matplotlib.pyplot as plt
 import seaborn as sns
 import abess.linear
+from clogistic import LogisticRegression
+
+from solver import bvls_torch
 
 warnings.simplefilter('once', UserWarning)
+
+def get_lb_ub(constraints, return_np=False):
+    lb = torch.where(constraints == -1, -torch.inf, torch.where(constraints == 1, 0, -torch.inf))
+    ub = torch.where(constraints == 1, torch.inf, torch.where(constraints == -1, 0, torch.inf))
+    if return_np:
+        return lb.numpy(), ub.numpy()
+    else:
+        return lb, ub
 
 class GetDummies(BaseEstimator, TransformerMixin):
     def __init__(self, dummy_columns):
@@ -54,8 +65,19 @@ class torch_Ridge():
         self.alpha = alpha
         self.device = device
 
-    def fit(self, X, y):
+    def fit(self, X, y, constraints=None):
         self.coef_ = torch.linalg.solve(X.T @ X + self.alpha * torch.eye(X.shape[1]).to(self.device), X.T @ y)
+
+        if constraints == None:
+            return
+        
+        else:
+            print(constraints)
+            print(X.shape)
+            lb, ub = get_lb_ub(constraints, return_np=False)
+            self.coef_, _, _, _ = bvls_torch(X, y, self.coef_, lb, ub, tol=1e-5, max_iter=None)
+
+            print(self.coef_)
 
     def predict(self, X):
         return X.to(self.device) @ self.coef_
@@ -70,7 +92,7 @@ class ELM_Regressor():
     '''
 
     def __init__(self, n_input, n_categorical_cols, n_hid, seed=0, elm_scale=10, 
-                 elm_alpha=0.0001, act='elu', device='cpu'):
+                 elm_alpha=0.0001, act='elu', constraints=None, device='cpu'):
         '''
         Input parameters:
         - n_input: number of inputs/features (should be X.shape[1])
@@ -92,6 +114,9 @@ class ELM_Regressor():
         # The following are the random weights in the model which are not optimized.
         self.hidden_list = torch.normal(mean=torch.zeros(self.n_numerical_cols, 
                                                          self.n_numerical_cols * n_hid), std=elm_scale).to(device)
+        
+        if constraints != None:
+            self.hidden_list = torch.abs(self.hidden_list)
 
         mask = torch.block_diag(*[torch.ones(n_hid)] * self.n_numerical_cols).to(device)
         self.hidden_mat = self.hidden_list * mask
@@ -107,6 +132,16 @@ class ELM_Regressor():
             self.act = torch.nn.ReLU()
         else:
             self.act = act
+
+        if constraints == None:
+            self.constraints = constraints
+        else:
+            constraints_tmp = []
+            for i in range(self.n_numerical_cols):
+                constraints_tmp.extend([constraints[i]] * self.n_hid)
+            for i in range(self.n_categorical_cols):
+                constraints_tmp.append(0)
+            self.constraints = torch.Tensor(constraints_tmp)
         self.device = device
 
     def get_hidden_values(self, X):
@@ -166,7 +201,7 @@ class ELM_Regressor():
         X_hid_mult = X_hid * mult_coef
         # Fit the ridge regression on the hidden values.
         m = torch_Ridge(alpha=self.elm_alpha, device=self.device)
-        m.fit(X_hid_mult, y)
+        m.fit(X_hid_mult, y, constraints=self.constraints)
         self.output_model = m
         return X_hid
     
@@ -230,15 +265,11 @@ class IGANN:
 
         if task == 'classification':
             # todo: torch
-            self.init_classifier = LogisticRegression(penalty='l1', solver='liblinear', C=1 / self.init_reg,
-                                                     random_state=random_state)
-            #self.init_classifier = LogisticRegression(penalty='none', solver='lbfgs',
-            #                                          max_iter=2000, random_state=1337)
+            self.init_classifier = LogisticRegression(penalty='l2', C=1 / self.init_reg)
             self.criterion = lambda prediction, target: torch.nn.BCEWithLogitsLoss()(prediction,
                                                                                      torch.nn.ReLU()(target))
         elif task == 'regression':
-            # todo: torch
-            self.init_classifier = Lasso(alpha=self.init_reg)
+            self.init_classifier = torch_Ridge(alpha=self.init_reg, device=self.device)
             self.criterion = torch.nn.MSELoss()
         else:
             warnings.warn('Task not implemented. Can be classification or regression')
@@ -329,7 +360,7 @@ class IGANN:
 
         return X
 
-    def fit(self, X, y, val_set=None, eval=None, plot_fixed_features=None, fitted_dummies=None):
+    def fit(self, X, y, val_set=None, eval=None, constraints=None, plot_fixed_features=None, fitted_dummies=None):
         '''
         This function fits the model on training data (X, y).
         Parameters:
@@ -338,6 +369,7 @@ class IGANN:
         val_set: can be tuple (X_val, y_val) for a defined validation set. If not set,
         it will be split from the training set randomly.
         eval: can be tuple (X_test, y_test) for additional evaluation during training
+        constraints: monotonic constraints on the shape functions. Needs to be a python list of length X.shape[1] where 1 indicates monotonic increasing, -1 monotonic decreasing, 0 no constraint.
         plot_fixed_features: Per default the most important features are plotted for verbose=2.
         This can be changed here to keep track of the same feature throughout training.
         '''
@@ -350,6 +382,9 @@ class IGANN:
 
         else:
             X = self._preprocess_feature_matrix(X, fit_dummies=True)
+
+        if type(constraints) == list:
+            assert(len(constraints) == self.n_numerical_cols)
 
         if type(y) == pd.Series or type(y) == pd.DataFrame:
             y = y.values
@@ -371,7 +406,21 @@ class IGANN:
             self.feature_indizes = np.arange(X.shape[1])
 
         # Fit the linear model on all data
-        self.init_classifier.fit(X, y)
+        if self.task == 'classification':
+            if type(constraints) == list:
+                constraints = constraints + [0] * self.n_categorical_cols + [0] # intercept and categoricals have no constraints
+                constraints = torch.Tensor(constraints) 
+                lb, ub = get_lb_ub(constraints, return_np=True)
+                bounds = Bounds(lb, ub)
+            else:
+                bounds = None
+            self.init_classifier.fit(X, torch.nn.ReLU()(y), bounds=bounds)
+        else:
+            constraints = constraints + [0] * self.n_categorical_cols # intercept and categoricals have no constraints
+            constraints = torch.Tensor(constraints) 
+            self.init_classifier.fit(X, y, constraints=constraints)
+
+        self.constraints = constraints
 
         # Split the data into train and validation data and compute the prediction of the
         # linear model. For regression this is straightforward, for classification, we
@@ -402,8 +451,8 @@ class IGANN:
                 X_val = val_set[0]
                 y_val = val_set[1].squeeze()
 
-            y_hat = torch.from_numpy(self.init_classifier.predict(X).squeeze().astype(np.float32))
-            y_hat_val = torch.from_numpy(self.init_classifier.predict(X_val).squeeze().astype(np.float32))
+            y_hat = self.init_classifier.predict(X).squeeze()
+            y_hat_val = self.init_classifier.predict(X_val).squeeze()
 
         # Store some information about the dataset which we later use for plotting.
         self.X_min = list(X.min(axis=0))
@@ -466,6 +515,7 @@ class IGANN:
                                     elm_scale=self.elm_scale,
                                     elm_alpha=self.elm_alpha,
                                     act=self.act, 
+                                    constraints=self.constraints,
                                     device=self.device)
             
             # Fit ELM regressor
@@ -1060,7 +1110,7 @@ class IGANN_Bagged:
 
 if __name__ == '__main__':
     from sklearn.datasets import make_circles, make_regression
-    '''
+    
     X_small, y_small = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.3)
     X_large, y_large = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.7)
 
@@ -1079,7 +1129,7 @@ if __name__ == '__main__':
     inputs = df[['x1', 'x2']]
     targets = df.label
 
-    m.fit(inputs, targets)
+    m.fit(inputs, targets, constraints=[-1,1])
     end = time.time()
     print(end - start)
 
@@ -1099,15 +1149,15 @@ if __name__ == '__main__':
     y_train = (y_train - y_mean) / y_std
     y_test = (y_test - y_mean) / y_std
     start = time.time()
-    m = IGANN_Bagged(task='regression', n_estimators=100, verbose=0, n_bags=5) #, device='cuda'
+    m = IGANN(task='regression', n_estimators=100, verbose=1) #, device='cuda'
     # m = IGANN(task='regression', n_estimators=100, verbose=0)
-    m.fit(pd.DataFrame(X_train), y_train)
+    m.fit(pd.DataFrame(X_train), y_train, constraints=[-1, -1, -1, -1])
     end = time.time()
     print(end - start)
     m.plot_single(show_n=6, max_cat_plotted=4)
     
     #####
-    '''
+    
     X, y = make_regression(10000, 2, n_informative=2)
     y = (y - y.mean()) / y.std()
     X = pd.DataFrame(X)
