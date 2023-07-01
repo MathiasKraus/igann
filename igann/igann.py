@@ -420,8 +420,9 @@ class IGANN:
                 bounds = None
             self.init_classifier.fit(X, torch.nn.ReLU()(y), bounds=bounds)
         else:
-            constraints = constraints + [0] * self.n_categorical_cols # categoricals have no constraints
-            constraints = torch.Tensor(constraints) 
+            if type(constraints) == list:
+                constraints = constraints + [0] * self.n_categorical_cols # categoricals have no constraints
+                constraints = torch.Tensor(constraints) 
             self.init_classifier.fit(X, y, constraints=constraints)
 
         self.constraints = constraints
@@ -1155,7 +1156,7 @@ if __name__ == '__main__':
     start = time.time()
     m = IGANN(task='regression', n_estimators=100, verbose=1) #, device='cuda'
     # m = IGANN(task='regression', n_estimators=100, verbose=0)
-    m.fit(pd.DataFrame(X_train), y_train, constraints=[1, -1, 0, -1])
+    m.fit(pd.DataFrame(X_train), y_train)#, constraints=[1, -1, 0, -1])
     end = time.time()
     print(end - start)
     m.plot_single(show_n=6, max_cat_plotted=4)
