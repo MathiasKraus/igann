@@ -114,9 +114,11 @@ class ELM_Regressor():
         # The following are the random weights in the model which are not optimized.
         self.hidden_list = torch.normal(mean=torch.zeros(self.n_numerical_cols, 
                                                          self.n_numerical_cols * n_hid), std=elm_scale).to(device)
-        
+
         if constraints != None:
-            self.hidden_list = torch.abs(self.hidden_list)
+            for i in range(len(constraints)):
+                if constraints[i] != 0:
+                    self.hidden_list[i] = torch.abs(self.hidden_list[i])
 
         mask = torch.block_diag(*[torch.ones(n_hid)] * self.n_numerical_cols).to(device)
         self.hidden_mat = self.hidden_list * mask
@@ -408,15 +410,17 @@ class IGANN:
         # Fit the linear model on all data
         if self.task == 'classification':
             if type(constraints) == list:
-                constraints = constraints + [0] * self.n_categorical_cols + [0] # intercept and categoricals have no constraints
+                constraints = constraints + [0] * self.n_categorical_cols # categoricals have no constraints
+                constraints_for_init_model = constraints + [0] # needs entry for intercept
                 constraints = torch.Tensor(constraints) 
-                lb, ub = get_lb_ub(constraints, return_np=True)
+                constraints_for_init_model = torch.Tensor(constraints_for_init_model)
+                lb, ub = get_lb_ub(constraints_for_init_model, return_np=True)
                 bounds = Bounds(lb, ub)
             else:
                 bounds = None
             self.init_classifier.fit(X, torch.nn.ReLU()(y), bounds=bounds)
         else:
-            constraints = constraints + [0] * self.n_categorical_cols # intercept and categoricals have no constraints
+            constraints = constraints + [0] * self.n_categorical_cols # categoricals have no constraints
             constraints = torch.Tensor(constraints) 
             self.init_classifier.fit(X, y, constraints=constraints)
 
@@ -1110,7 +1114,7 @@ class IGANN_Bagged:
 
 if __name__ == '__main__':
     from sklearn.datasets import make_circles, make_regression
-    
+    '''
     X_small, y_small = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.3)
     X_large, y_large = make_circles(n_samples=(250, 500), random_state=3, noise=0.04, factor=0.7)
 
@@ -1129,7 +1133,7 @@ if __name__ == '__main__':
     inputs = df[['x1', 'x2']]
     targets = df.label
 
-    m.fit(inputs, targets, constraints=[-1,1])
+    m.fit(inputs, targets, constraints=[-1,0])
     end = time.time()
     print(end - start)
 
@@ -1151,13 +1155,13 @@ if __name__ == '__main__':
     start = time.time()
     m = IGANN(task='regression', n_estimators=100, verbose=1) #, device='cuda'
     # m = IGANN(task='regression', n_estimators=100, verbose=0)
-    m.fit(pd.DataFrame(X_train), y_train, constraints=[-1, -1, -1, -1])
+    m.fit(pd.DataFrame(X_train), y_train, constraints=[1, -1, 0, -1])
     end = time.time()
     print(end - start)
     m.plot_single(show_n=6, max_cat_plotted=4)
     
     #####
-    
+    '''
     X, y = make_regression(10000, 2, n_informative=2)
     y = (y - y.mean()) / y.std()
     X = pd.DataFrame(X)
