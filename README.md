@@ -23,7 +23,7 @@ Theodor Stöcker, FAU Erlangen-Nürnberg
 
 ## Dependencies
 
-The project depends on PyTorch and abess (version 0.4.5).
+The project depends on PyTorch and abess (version 0.4.5) and clogistic.
 
 ## Usage
 
