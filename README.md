@@ -21,6 +21,14 @@ Lasse Bohlen, FAU Erlangen-Nürnberg
 Julian Rosenberger, FAU Erlangen-Nürnberg  
 Theodor Stöcker, FAU Erlangen-Nürnberg
 
+## Installation
+
+Available through 
+```
+pip install igann
+```
+For the latest features, use this repository.
+
 ## Dependencies
 
 The project depends on PyTorch and abess (version 0.4.5).
