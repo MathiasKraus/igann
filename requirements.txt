@@ -1,7 +1,0 @@
-numpy
-pandas
-scikit-learn
-torch
-matplotlib
-seaborn
-abess==0.4.5

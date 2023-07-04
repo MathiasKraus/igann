@@ -377,7 +377,7 @@ def test_classification_plot_single_w_baseline():
 
    model.plot_single()
 
-   baseline = "baseline/baseline_class_plot_single.png"
+   baseline = "tests/baseline/baseline_class_plot_single.png"
 
    path = "temp_class_plot_single.png"
 
