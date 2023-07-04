@@ -21,6 +21,14 @@ Lasse Bohlen, FAU Erlangen-Nürnberg
 Julian Rosenberger, FAU Erlangen-Nürnberg  
 Theodor Stöcker, FAU Erlangen-Nürnberg
 
+## Installation
+
+Available through 
+```
+pip install igann
+```
+For the latest features, use this repository.
+
 ## Dependencies
 
 The project depends on PyTorch and abess (version 0.4.5).
@@ -60,6 +68,7 @@ When initializing IGANN, the following parameters can be set:
 
 In the following, we use the common diabetes dataset from sklearn (https://scikit-learn.org/0.16/modules/generated/sklearn.datasets.load_diabetes.html). After loading the dataset via
 
+
 ```
 X, y = load_diabetes(return_X_y=True, as_frame=True)
 scaler = StandardScaler()
@@ -77,6 +86,7 @@ y = (y - y.mean()) / y.std()
 
 we can simply initialize and fit IGANN with
 ```
+from igann import IGANN
 model = IGANN(task='regression')
 model.fit(X, y)
 ```
@@ -95,6 +105,7 @@ we obtain the following shape functions
 In many cases, it makes sense to train a sparse IGANN model, i.e., a model which only basis its output on few features. This generally increases the ease of understanding the model behavior.
 
 ```
+from igann import IGANN
 model = IGANN(task='regression', sparse=5)
 model.fit(X, y)
 model.plot_single()
@@ -104,6 +115,16 @@ yields (note that the sparse parameters denotes the max number of features)
 
 ![image](https://github.com/MathiasKraus/igann/assets/15181429/1ef6a099-4e09-471a-9e6f-da955dbff23d)
 
+# Citations
+```latex
+@article{kraus2023interpretable,
+  title={Interpretable Generalized Additive Neural Networks},
+  author={Kraus, Mathias and Tschernutter, Daniel and Weinzierl, Sven and Zschech, Patrick},
+  journal={European Journal of Operational Research},
+  year={2023},
+  publisher={Elsevier}
+}
+```
 
 
 
