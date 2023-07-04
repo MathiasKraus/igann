@@ -28,7 +28,7 @@ class GetDummies(BaseEstimator, TransformerMixin):
             for val in X[c].unique():
                 if c not in self.cols_per_feat.keys():
                     self.cols_per_feat[c] = []
-                self.cols_per_feat[c].append(str(c+'_'+val))
+                self.cols_per_feat[c].append(str(c+'_'+str(val)))
         
         self.columns = pd.get_dummies(X, columns=self.dummy_columns, drop_first=True).columns
         return self
@@ -309,7 +309,7 @@ class IGANN:
             original_list = [[categorical_cols[i]] * len(encoded_list[i]) for i in range(len(encoded_list))]
 
             self.dummy_encodings = dict(zip(self._flatten(encoded_list), self._flatten(original_list)))
-            X_cat = torch.from_numpy(one_hot_encoded.values).float()
+            X_cat = torch.from_numpy(one_hot_encoded.values.astype(float)).float()
             self.n_categorical_cols = X_cat.shape[1]
             self.feature_names = numerical_cols + list(one_hot_encoded.columns)
         else:
