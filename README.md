@@ -70,6 +70,10 @@ In the following, we use the common diabetes dataset from sklearn (https://sciki
 
 
 ```
+import pandas as pd
+from sklearn.datasets import load_diabetes
+from sklearn.preprocessing import StandardScaler
+
 X, y = load_diabetes(return_X_y=True, as_frame=True)
 scaler = StandardScaler()
 X_names = X.columns
