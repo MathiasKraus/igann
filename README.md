@@ -56,8 +56,7 @@ When initializing IGANN, the following parameters can be set:
 - elm_alpha: the regularization strength for the ridge regression in the ELM model.
 - sparse: Tells if IGANN should be sparse or not. Integer denotes the max number of used features
 - act: the activation function in the ELM model. Can be 'elu', 'relu' or a torch activation function.
-- early_stopping: we use early stopping which means that we don't continue training more ELM. This parameter sets the patience
-- models, if there has been no improvements for 'early_stopping' number of iterations.
+- early_stopping: If there has been no improvements for 'early_stopping' number of iterations, training is stopped.
 - device: the device on which the model is optimized. Can be 'cpu' or 'cuda'
 - random_state: random seed.
 - optimize_threshold: if True, the threshold for the classification is optimized using train data only and using the ROC curve. Otherwise, per default the raw logit value greater 0 means class 1 and less 0 means class -1.
