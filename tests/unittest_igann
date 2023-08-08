@@ -1,0 +1,448 @@
+# %%
+import unittest
+import torch
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from matplotlib.testing.compare import compare_images
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.datasets import load_breast_cancer, make_regression, load_diabetes
+
+from sklearn.datasets import make_classification, make_regression
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import f1_score, mean_squared_error
+from sklearn.model_selection import train_test_split, KFold
+
+
+from igann import IGANN
+from igann import IGANN_sklearn
+
+
+class TestSklearnIGANN(unittest.TestCase):
+    def setUp(self):
+        # Generate a dummy classification dataset
+        X, y = make_classification(n_samples=100, n_features=20, n_informative=2)
+        self.X = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
+        self.y = pd.Series(y, name="target")
+
+        X_reg, y_reg = make_regression(n_samples=100, n_features=20, n_informative=2)
+        self.X_reg = pd.DataFrame(
+            X_reg, columns=[f"feature_{i}" for i in range(X_reg.shape[1])]
+        )
+        sc = StandardScaler()
+        self.y_reg = sc.fit_transform(
+            pd.Series(y_reg, name="target").values.reshape(-1, 1)
+        )
+
+        self.igann_classifier = IGANN(task="classification")
+        self.igann_regressor = IGANN(task="regression")
+
+    def test_classification(self):
+        # Fit the model to the data
+
+        self.igann_classifier.fit(self.X, self.y)
+
+        # Make predictions
+        y_pred = self.igann_classifier.predict(self.X)
+        y_pred = self.igann_classifier.predict_proba(self.X)
+
+        # Score the model
+        classifier_score = self.igann_classifier.score(self.X, self.y)
+        self.assertTrue(0 <= classifier_score <= 1)
+
+        # Test cross_val_score
+        cross_val_scores = cross_val_score(self.igann_classifier, self.X, self.y, cv=5)
+        self.assertTrue(np.all(cross_val_scores >= 0))
+        self.assertTrue(np.all(cross_val_scores <= 1))
+
+        # Test GridSearchCV
+        param_grid = {"n_hid": [3, 7, 10], "elm_scale": [0.5, 1, 3]}
+        grid_search = GridSearchCV(self.igann_classifier, param_grid, cv=5)
+        grid_search.fit(self.X, self.y)
+
+        # Test get_params and set_params
+        params = self.igann_classifier.get_params()
+        self.igann_classifier.set_params(n_hid="6", elm_scale="5")
+        new_params = self.igann_classifier.get_params()
+        self.assertNotEqual(params, new_params)
+
+    def test_regression(self):
+        # Fit the model to the data
+        self.igann_regressor.fit(self.X_reg, self.y_reg)
+
+        # Make predictions
+        y_pred = self.igann_regressor.predict(self.X_reg)
+
+        # Score the model
+        regressor_score = self.igann_regressor.score(self.X_reg, self.y_reg)
+        self.assertTrue(-1 <= regressor_score <= 1)
+
+        # Test cross_val_score
+        cross_val_scores = cross_val_score(
+            self.igann_regressor, self.X_reg, self.y_reg, cv=5
+        )
+        self.assertTrue(np.all(cross_val_scores <= 1))
+        self.assertTrue(np.all(cross_val_scores >= -1))
+
+        # Test GridSearchCV
+        param_grid = {"n_hid": [3, 7, 10], "elm_scale": [0.5, 1, 3]}
+        grid_search = GridSearchCV(self.igann_regressor, param_grid, cv=5)
+        grid_search.fit(self.X_reg, self.y_reg)
+
+        # Test get_params and set_params
+        params = self.igann_regressor.get_params()
+        self.igann_regressor.set_params(n_hid="6", elm_scale="5")
+        new_params = self.igann_regressor.get_params()
+        self.assertNotEqual(params, new_params)
+
+
+class TestIgann(unittest.TestCase):
+    np.random.seed(0)  # Ensure determinism in the tests
+
+    def setUp(self):
+        # Generate a dummy classification dataset
+        X, y = make_classification(n_samples=100, n_features=10, n_informative=2)
+        self.X = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
+        self.y = pd.Series(y, name="target")
+
+        X_reg, y_reg = make_regression(n_samples=100, n_features=10, n_informative=2)
+        self.X_reg = pd.DataFrame(
+            X_reg, columns=[f"feature_{i}" for i in range(X_reg.shape[1])]
+        )
+        sc = StandardScaler()
+        self.y_reg = sc.fit_transform(
+            pd.Series(y_reg, name="target").values.reshape(-1, 1)
+        )
+
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
+            self.X, self.y
+        )
+
+        self.igann_classifier = IGANN(task="classification")
+        self.igann_regressor = IGANN(task="regression")
+
+    def test_sparse_igann(self):
+        X, y = make_regression(100000, 10, n_informative=3, random_state=0)
+        y = (y - y.mean()) / y.std()
+        m = IGANN(task="regression", n_estimators=1000, sparse=10)
+        m.fit(pd.DataFrame(X), y)
+        self.assertTrue(len(m.feature_names) < 7)
+
+    def test_classification_train_no_interaction_pd_df(self):
+        X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+
+        scaler = StandardScaler()
+
+        X_names = X.columns
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
+
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+
+        X_train = pd.DataFrame(X_train, columns=X_names)
+        X_test = pd.DataFrame(X_test, columns=X_names)
+
+        model = IGANN()
+
+        model.fit(X_train, y_train)
+        preds = model.predict(X_test)
+
+        f1 = f1_score(y_test, preds)
+
+        self.assertTrue(f1 > 0.94)
+
+    def test_classification_predict_proba_no_interaction_pd_df(self):
+        X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+
+        scaler = StandardScaler()
+
+        X_names = X.columns
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
+
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+
+        X_train = pd.DataFrame(X_train, columns=X_names)
+        X_test = pd.DataFrame(X_test, columns=X_names)
+
+        model = IGANN()
+
+        model.fit(X_train, y_train)
+        preds = model.predict_proba(X_test)
+
+        max_indices = np.argmax(preds, axis=1)
+        f1 = f1_score(y_test, max_indices)
+
+        self.assertTrue(f1 > 0.94)
+
+    def test_classification_plot_single(self):
+        X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+
+        scaler = StandardScaler()
+
+        X_names = X.columns
+
+        X = scaler.fit_transform(X)
+
+        X = pd.DataFrame(X, columns=X_names)
+
+        model = IGANN()
+
+        model.fit(X, y)
+
+        # Check if the function runs without raising an error
+        try:
+            model.plot_single()
+        except Exception as e:
+            self.fail(f"plot_single() raised {type(e).__name__} unexpectedly!")
+
+    def test_classification_plot_learning(self):
+        X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+
+        scaler = StandardScaler()
+
+        X_names = X.columns
+
+        X = scaler.fit_transform(X)
+
+        X = pd.DataFrame(X, columns=X_names)
+
+        model = IGANN()
+
+        model.fit(X, y)
+
+        # Check if the function runs without raising an error
+        try:
+            model.plot_learning()
+        except Exception as e:
+            self.fail(f"plot_learning() raised {type(e).__name__} unexpectedly!")
+
+    def test_regression_train_no_interaction_pd_df(self):
+        X, y = load_diabetes(return_X_y=True, as_frame=True)
+
+        scaler = StandardScaler()
+
+        X_names = X.columns
+
+        kf = KFold(n_splits=8, shuffle=True)
+        mse = []
+
+        for train_index, test_index in kf.split(X, y):
+            X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+            y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+
+            X_train = scaler.fit_transform(X_train)
+            X_test = scaler.transform(X_test)
+
+            y_test = (y_test - y_train.mean()) / y_train.std()
+            y_train = (y_train - y_train.mean()) / y_train.std()
+
+            X_train = pd.DataFrame(X_train, columns=X_names)
+            X_test = pd.DataFrame(X_test, columns=X_names)
+
+            model = IGANN(task="regression")
+
+            model.fit(X_train, y_train)
+            preds = model.predict(X_test)
+
+            mse.append(mean_squared_error(y_test, preds))
+
+        self.assertTrue(np.mean(mse) < 0.6)
+
+    def test_regression_plot_learning(self):
+        X, y = load_diabetes(return_X_y=True, as_frame=True)
+
+        scaler = StandardScaler()
+
+        X_names = X.columns
+
+        X = scaler.fit_transform(X)
+        y = (y - y.mean()) / y.std()
+
+        X = pd.DataFrame(X, columns=X_names)
+
+        model = IGANN(task="regression")
+
+        model.fit(X, y)
+
+        # Check if the function runs without raising an error
+        try:
+            model.plot_learning()
+        except Exception as e:
+            self.fail(f"plot_learning() raised {type(e).__name__} unexpectedly!")
+
+    def test_classification_plot_single_w_baseline(self):
+        X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+
+        scaler = StandardScaler()
+
+        X_names = X.columns
+
+        X = scaler.fit_transform(X)
+
+        X = pd.DataFrame(X, columns=X_names)
+
+        model = IGANN(random_state=42)
+
+        model.fit(X, y)
+
+        model.plot_single()
+
+        # this doesn't work for me (HB_Dynamite, classic path problems)
+        # baseline = "./tests/baseline/baseline_class_plot_single.png"
+        baseline = "tests/baseline/baseline_class_plot_single.png"
+
+        path = "temp_class_plot_single.png"
+
+        plt.gcf().savefig(path)
+
+        result = compare_images(baseline, path, tol=0.01)
+
+        self.assertIsNone(result)
+
+    def test_cat_variables(self):
+        self.X["cat_test"] = np.random.choice(
+            ["A", "B", "C", "D"], self.X.shape[0], p=[0.2, 0.2, 0.1, 0.5]
+        )
+        m = IGANN(task="regression", n_estimators=1000)
+        m.fit(pd.DataFrame(self.X), self.y)
+        self.assertEqual(m.n_categorical_cols, 3)
+        self.assertEqual(m.n_numerical_cols, 10)
+
+    def test_igann_dummies_for_cat_with_nans(self):
+        self.X["cat_test"] = np.random.choice(
+            ["A", "B", "C", "D", np.nan], self.X.shape[0], p=[0.2, 0.2, 0.1, 0.3, 0.2]
+        )
+        m = IGANN(task="regression", n_estimators=1000)
+        m.fit(pd.DataFrame(self.X), self.y)
+        self.assertEqual(m.n_categorical_cols, 4)
+        self.assertEqual(m.n_numerical_cols, 10)
+        self.assertEqual(len(m.feature_names), 14)
+        self.X["cat_test"] = np.random.choice(
+            ["A", "B", "C", np.nan], self.X.shape[0], p=[0.2, 0.2, 0.1, 0.5]
+        )
+        m = IGANN(task="regression", n_estimators=1000)
+        m.fit(pd.DataFrame(self.X), self.y)
+        self.assertEqual(m.n_categorical_cols, 3)
+        self.assertEqual(m.n_numerical_cols, 10)
+        self.assertEqual(len(m.feature_names), 13)
+
+    def test_parameters_n_hid(self):
+        model = IGANN(task="regression")
+        self.assertEqual(
+            model.n_hid, 10
+        )  # If this fails, maybe the default value has changed
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        self.assertEqual(
+            model.regressors[0].n_hid, 10
+        )  # If this fails, maybe the default value has changed
+
+        model = IGANN(task="regression", n_hid=15)
+        self.assertEqual(model.n_hid, 15)
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        self.assertEqual(model.regressors[0].n_hid, 15)
+
+        model = IGANN(task="regression", n_hid=5)
+        self.assertEqual(model.n_hid, 5)
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        self.assertEqual(model.regressors[0].n_hid, 5)
+
+    def test_parameters_n_estimators(self):
+        model = IGANN(task="regression")
+        self.assertEqual(
+            model.n_estimators, 5000
+        )  # If this fails, maybe the default value has changed
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        self.assertLessEqual(len(model.regressors), 5000)
+
+        model = IGANN(task="regression", n_estimators=10000)
+        self.assertEqual(model.n_estimators, 10000)
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        self.assertLessEqual(len(model.regressors), 10000)
+
+        model = IGANN(task="regression", n_estimators=200)
+        self.assertEqual(model.n_estimators, 200)
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        self.assertLessEqual(len(model.regressors), 200)
+
+    def test_parameters_boost_rate(self):
+        model = IGANN(task="regression")
+        self.assertEqual(
+            model.boost_rate, 0.1
+        )  # If this fails, maybe the default value has changed
+
+        model = IGANN(task="regression", boost_rate=0.3)
+        self.assertEqual(model.boost_rate, 0.3)
+
+        model = IGANN(task="regression", boost_rate=0.01)
+        self.assertEqual(model.boost_rate, 0.01)
+
+    def test_parameters_init_reg(self):
+        model = IGANN(task="regression")
+        self.assertEqual(
+            model.init_reg, 1
+        )  # If this fails, maybe the default value has changed
+
+        model = IGANN(task="regression", init_reg=3)
+        self.assertEqual(model.init_reg, 3)
+
+        model = IGANN(task="regression", init_reg=0.1)
+        self.assertEqual(model.init_reg, 0.1)
+
+    def test_parameters_elm_scale(self):
+        # instantiate model and assert elm_scale parameter is default (1)
+        model = IGANN(task="regression")
+        assert model.elm_scale == 1, "Default value has changed"
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        assert model.regressors[0].elm_scale == 1, "Fitted model value has changed"
+
+        # instantiate model with elm_scale set to 3
+        model = IGANN(task="regression", elm_scale=3)
+        assert model.elm_scale == 3, "Input parameter has not been applied"
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        assert model.regressors[0].elm_scale == 3, "Fitted model value has changed"
+
+        # instantiate model with elm_scale set to 0.1
+        model = IGANN(task="regression", elm_scale=0.1)
+        assert model.elm_scale == 0.1, "Input parameter has not been applied"
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        assert model.regressors[0].elm_scale == 0.1, "Fitted model value has changed"
+
+    def test_parameters_act(self):
+        model = IGANN(task="regression")
+        assert model.act == "elu"  # If this fails, maybe the default value has changed
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        assert isinstance(model.regressors[0].act, torch.nn.ELU)
+
+        model = IGANN(task="regression", act="relu")
+        assert model.act == "relu"
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        assert isinstance(model.regressors[0].act, torch.nn.ReLU)
+
+        model = IGANN(task="regression", act=torch.nn.Tanh())
+        assert isinstance(model.act, torch.nn.Tanh)
+        model.fit(pd.DataFrame(self.X_train), self.y_train)
+        assert isinstance(model.regressors[0].act, torch.nn.Tanh)
+
+    def test_parameters_early_stopping(self):
+        model = IGANN(task="regression")
+        assert (
+            model.early_stopping == 50
+        )  # If this fails, maybe the default value has changed
+
+        model = IGANN(task="regression", early_stopping=20)
+        assert model.early_stopping == 20
+
+        model = IGANN(task="regression", early_stopping=100)
+        assert model.early_stopping == 100
+
+
+if __name__ == "__main__":
+    unittest.main()
+    # use this in interactive mode juypiter Notebooks
+    # unittest.main(argv=["first-arg-is-ignored"], exit=False)
+
+# %%
