@@ -879,7 +879,7 @@ class IGANN:
         X = self._preprocess_feature_matrix(X, fit_dummies=False).to(self.device)
         X = X[:, self.feature_indizes]
 
-        if not hasattr(self, 'feature_maps'):
+        if not hasattr(self, 'feature_effects'):
             self.feature_effects = dict(zip(range(X.shape[1]), [dict() for _ in range(X.shape[1])]))
 
         for i in range(X.shape[1]):
