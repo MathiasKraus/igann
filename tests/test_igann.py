@@ -20,6 +20,18 @@ def test_sparse_igann():
     m.fit(pd.DataFrame(X), y)
     assert len(m.feature_names) < 7
 
+def test_predict_raw_repeated_values():
+    X, y = make_regression(10000, 10, n_informative=3, random_state=0)
+    y = (y - y.mean()) / y.std()
+    m =  igann.IGANN(task='regression', n_estimators=100)
+    X = pd.DataFrame(X)
+    m.fit(X, y)
+    pred_raw = m.predict_raw(X)
+    pred_raw_repeated = m.predict_raw_repeated_values(X)
+    pred_raw_repeated_2 = m.predict_raw_repeated_values(X)
+    assert np.sum(np.abs(pred_raw - pred_raw_repeated)) < 0.01
+    assert np.sum(np.abs(pred_raw_repeated - pred_raw_repeated_2)) < 0.01
+
 def test_classification_train_no_interaction_pd_df():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 

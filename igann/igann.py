@@ -263,34 +263,11 @@ class IGANN:
         self.random_state = random_state
         self.optimize_threshold = optimize_threshold
         self.verbose = verbose
-        ###### this is not needed since these are just for one run! ######
-        # self.regressors = []
-        # self.boosting_rates = []
-        # self.train_scores = []
-        # self.val_scores = []
-        # self.train_losses = []
-        # self.val_losses = []
-        # self.test_losses = []
-        # self.regressor_predictions = []
         self.boost_rate = boost_rate
         self.target_remapped_flag = False
-        """Is set to true during the fit method if the target (y) is remapped to -1 and 1 instead of 0 and 1."""
-
-        ###### moved this to fit function to be more in line with sklearn. I also think would be normal to have to classes for reg and class######
-        # if task == 'classification':
-        #     # todo: torch
-        #     self.init_classifier = LogisticRegression(penalty='l1', solver='liblinear', C=1 / self.init_reg,
-        #                                              random_state=random_state)
-        #     #self.init_classifier = LogisticRegression(penalty='none', solver='lbfgs',
-        #     #                                          max_iter=2000, random_state=1337)
-        #     self.criterion = lambda prediction, target: torch.nn.BCEWithLogitsLoss()(prediction,
-        #                                                                              torch.nn.ReLU()(target))
-        # elif task == 'regression':
-        #     # todo: torch
-        #     self.init_classifier = Lasso(alpha=self.init_reg)
-        #     self.criterion = torch.nn.MSELoss()
-        # else:
-        #     warnings.warn('Task not implemented. Can be classification or regression')
+        # this is a special setting for cases in which repeated predictions are made. Has to be set
+        # explicitly.
+        self.repeated_predictions = False 
 
     def _clip_p(self, p):
         if torch.max(p) > 100 or torch.min(p) < -100:
@@ -828,7 +805,10 @@ class IGANN:
                 "The call of predict_proba for a regression task was probably incorrect."
             )
 
-        pred = self.predict_raw(X)
+        if self.repeated_predictions:
+            pred = self.predict_raw_repeated_values(X)
+        else:
+            pred = self.predict_raw(X)
         pred = self._clip_p_numpy(pred)
         pred = 1 / (1 + np.exp(-pred))
 
@@ -844,10 +824,14 @@ class IGANN:
         Note: for a classification task, it returns the binary target values in a 1-d np.array, it can hold -1 and 1.
         If optimize_threshold is True for a classification task, the threshold is optimized on the training data.
         """
-        if self.task == "regression":
-            return self.predict_raw(X)
+        if self.repeated_predictions:
+            pred_raw = self.predict_raw_repeated_values(X)
         else:
             pred_raw = self.predict_raw(X)
+
+        if self.task == "regression":
+            return pred_raw
+        else:
             # detach and numpy pred_raw
             if self.optimize_threshold:
                 threshold = self.best_threshold
@@ -884,6 +868,41 @@ class IGANN:
         )
 
         return pred
+    
+    def predict_raw_repeated_values(self, X):
+        """
+        This function returns a prediction for a given feature matrix X
+        and stores the predicted values of the shape functions. For a prediction
+        with the exact same feature values, the prediction is then a simple lookup.
+        Note: for a classification task, it returns the raw logit values.
+        """
+        X = self._preprocess_feature_matrix(X, fit_dummies=False).to(self.device)
+        X = X[:, self.feature_indizes]
+
+        if not hasattr(self, 'feature_maps'):
+            self.feature_effects = dict(zip(range(X.shape[1]), [dict() for _ in range(X.shape[1])]))
+
+        for i in range(X.shape[1]):
+            missed_values = list(set([float(x) for x in X[:,i] if float(x) not in self.feature_effects[i]]))
+            _, pred = self._get_pred_of_i(i, torch.tensor(missed_values).to(self.device))
+
+            self.feature_effects[i].update(dict(zip(missed_values, pred.tolist())))
+
+        X = X.detach().cpu().numpy()
+        pred = np.zeros(len(X), dtype=np.float32)
+        for i in range(X.shape[1]):
+            pred += np.array([self.feature_effects[i][float(x)] for x in X[:,i]])
+        
+        pred = (
+            pred
+            + (self.init_classifier.coef_.astype(np.float32) @ X.transpose()).squeeze()
+            + self.init_classifier.intercept_
+        )
+
+        return pred
+
+
+
 
     def _flatten(self, l):
         return [item for sublist in l for item in sublist]
@@ -895,7 +914,7 @@ class IGANN:
         if x_values == None:
             feat_values = self.unique[i]
         else:
-            feat_values = x_values[i]
+            feat_values = x_values
         if self.task == "classification":
             pred = self.init_classifier.coef_[0, i] * feat_values
         else:
@@ -928,7 +947,10 @@ class IGANN:
         shape_functions = []
         for i, feat_name in enumerate(self.feature_names):
             datatype = "numerical" if i < self.n_numerical_cols else "categorical"
-            feat_values, pred = self._get_pred_of_i(i, x_values)
+            if x_values == None:
+                feat_values, pred = self._get_pred_of_i(i, None)
+            else:
+                feat_values, pred = self._get_pred_of_i(i, x_values[i])
             if datatype == "numerical":
                 shape_functions.append(
                     {
@@ -1567,7 +1589,7 @@ if __name__ == "__main__":
 
     ######
     """
-    X, y = make_regression(1000, 4, n_informative=4, random_state=42)
+    X, y = make_regression(20, 4, n_informative=4, random_state=42)
     X = pd.DataFrame(X)
     X["cat_test"] = np.random.choice(
         ["A", "B", "C", "D"], X.shape[0], p=[0.2, 0.2, 0.1, 0.5]
