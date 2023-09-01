@@ -248,7 +248,7 @@ class IGANN:
         elm_scale=1,
         elm_alpha=1,
         sparse=0,
-        act=[torch.nn.ELU(), torch.nn.ReLU(), torch.nn.Sigmoid()],
+        act=torch.nn.ELU(),
         early_stopping=50,
         device="cpu",
         random_state=1,
