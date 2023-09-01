@@ -95,7 +95,7 @@ class ELM_Regressor:
         seed=0,
         elm_scale=10,
         elm_alpha=0.0001,
-        act="elu",
+        act=torch.nn.ELU(),
         device="cpu",
     ):
         """
@@ -108,7 +108,7 @@ class ELM_Regressor:
         - elm_scale: the scale which is used to initialize the weights in the hidden layer of the
                  model. These weights are not changed throughout the optimization.
         - elm_alpha: the regularization of the ridge regression.
-        - act: the activation function in the model. can be 'elu', 'relu' or a torch activation function.
+        - act: the activation function in the model. can be any torch activation function or a list of torch activations which are applied randomly.
         - device: the device on which the regressor should train. can be 'cpu' or 'cuda'.
         """
         super().__init__()
@@ -130,12 +130,7 @@ class ELM_Regressor:
         self.n_hid = n_hid
         self.elm_scale = elm_scale
         self.elm_alpha = elm_alpha
-        if act == "elu":
-            self.act = torch.nn.ELU()
-        elif act == "relu":
-            self.act = torch.nn.ReLU()
-        else:
-            self.act = act
+        self.act = act
         self.device = device
 
     def get_hidden_values(self, X):
@@ -146,7 +141,19 @@ class ELM_Regressor:
         in X_hid
         """
         X_hid = X[:, : self.n_numerical_cols] @ self.hidden_mat
-        X_hid = self.act(X_hid)
+        if type(self.act) == list:
+            activations = [act(X_hid) for act in self.act]
+            concatenated = torch.stack(activations)
+            self.mask = torch.randint(len(self.act), (X_hid.shape[1],), dtype=torch.int64)
+            mask = self.mask.unsqueeze(0).expand(X_hid.shape[0], -1)
+
+            rows = torch.arange(X_hid.shape[0]).view(-1, 1).expand_as(mask)
+            cols = torch.arange(X_hid.shape[1]).view(1, -1).expand_as(mask)
+
+            X_hid = concatenated[mask, rows, cols]
+        else:
+            X_hid = self.act(X_hid)
+
         X_hid = torch.hstack((X_hid, X[:, self.n_numerical_cols :]))
 
         return X_hid
@@ -179,12 +186,29 @@ class ELM_Regressor:
         if i < self.n_numerical_cols:
             # numerical feature
             x_in = x_in @ self.hidden_mat[
-                i, i * self.n_hid : (i + 1) * self.n_hid
-            ].unsqueeze(0)
-            x_in = self.act(x_in)
-            out = x_in @ self.output_model.coef_[
-                i * self.n_hid : (i + 1) * self.n_hid
-            ].unsqueeze(1)
+                    i, i * self.n_hid : (i + 1) * self.n_hid
+                ].unsqueeze(0)
+            
+            if type(self.act) == list:
+                activations = [act(x_in) for act in self.act]
+                concatenated = torch.stack(activations)
+                mask = self.mask[
+                    i * self.n_hid : (i + 1) * self.n_hid
+                ]
+                mask = mask.unsqueeze(0).expand(len(x_in), -1)
+                rows = torch.arange(x_in.shape[0]).view(-1, 1).expand_as(mask)
+                cols = torch.arange(x_in.shape[1]).view(1, -1).expand_as(mask)
+
+                x_in = concatenated[mask, rows, cols]
+
+                out = x_in @ self.output_model.coef_[
+                    i * self.n_hid : (i + 1) * self.n_hid
+                ].unsqueeze(1)
+            else:
+                x_in = self.act(x_in)
+                out = x_in @ self.output_model.coef_[
+                    i * self.n_hid : (i + 1) * self.n_hid
+                ].unsqueeze(1)
         else:
             # categorical feature
             start_idx = self.n_numerical_cols * self.n_hid + (i - self.n_numerical_cols)
@@ -224,7 +248,7 @@ class IGANN:
         elm_scale=1,
         elm_alpha=1,
         sparse=0,
-        act="elu",
+        act=[torch.nn.ELU(), torch.nn.ReLU(), torch.nn.Sigmoid()],
         early_stopping=50,
         device="cpu",
         random_state=1,
@@ -241,7 +265,7 @@ class IGANN:
         elm_scale: the scale of the random weights in the elm model.
         elm_alpha: the regularization strength for the ridge regression in the ELM model.
         sparse: Tells if IGANN should be sparse or not. Integer denotes the max number of used features
-        act: the activation function in the ELM model. Can be 'elu', 'relu' or a torch activation function.
+        act: the activation function in the model. can be any torch activation function or a list of torch activations which are applied randomly.
         early_stopping: we use early stopping which means that we don't continue training more ELM
         models, if there has been no improvements for 'early_stopping' number of iterations.
         device: the device on which the model is optimized. Can be 'cpu' or 'cuda'
@@ -1233,7 +1257,7 @@ class IGANN_Bagged:
         elm_scale=1,
         elm_alpha=1,
         sparse=0,
-        act="elu",
+        act=torch.nn.ELU(),
         early_stopping=50,
         device="cpu",
         random_state=1,
@@ -1589,7 +1613,7 @@ if __name__ == "__main__":
 
     ######
     """
-    X, y = make_regression(20, 4, n_informative=4, random_state=42)
+    X, y = make_regression(1000, 4, n_informative=4, random_state=42)
     X = pd.DataFrame(X)
     X["cat_test"] = np.random.choice(
         ["A", "B", "C", "D"], X.shape[0], p=[0.2, 0.2, 0.1, 0.5]
