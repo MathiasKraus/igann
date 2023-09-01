@@ -133,6 +133,10 @@ class ELM_Regressor:
         self.act = act
         self.device = device
 
+        if type(self.act) == list:
+            self.mask = torch.randint(len(self.act), 
+                                      (self.n_numerical_cols * self.n_hid,), dtype=torch.int64).to(device)
+
     def get_hidden_values(self, X):
         """
         This step computes the values in the hidden layer. For this, we iterate
@@ -144,11 +148,10 @@ class ELM_Regressor:
         if type(self.act) == list:
             activations = [act(X_hid) for act in self.act]
             concatenated = torch.stack(activations)
-            self.mask = torch.randint(len(self.act), (X_hid.shape[1],), dtype=torch.int64)
             mask = self.mask.unsqueeze(0).expand(X_hid.shape[0], -1)
 
-            rows = torch.arange(X_hid.shape[0]).view(-1, 1).expand_as(mask)
-            cols = torch.arange(X_hid.shape[1]).view(1, -1).expand_as(mask)
+            rows = torch.arange(X_hid.shape[0]).view(-1, 1).expand_as(mask).to(self.device)
+            cols = torch.arange(X_hid.shape[1]).view(1, -1).expand_as(mask).to(self.device)
 
             X_hid = concatenated[mask, rows, cols]
         else:
@@ -1627,7 +1630,8 @@ if __name__ == "__main__":
     y_test = (y_test - y_mean) / y_std
     start = time.time()
     m = IGANN_Bagged(
-        task="regression", n_estimators=100, verbose=0, n_bags=5
+        task="regression", n_estimators=100, verbose=0, n_bags=5,
+        act=[torch.nn.ELU(), torch.nn.LogSigmoid()]
     )  # , device='cuda'
     # m = IGANN(task='regression', n_estimators=100, verbose=0)
     m.fit(pd.DataFrame(X_train), y_train)
