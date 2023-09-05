@@ -927,9 +927,17 @@ class IGANN:
         )
 
         return pred
+    
+    def copy(self):
+        '''
+        Create copy of igann object
+        '''
+        new_igann = deepcopy(self)
+        
+        if hasattr(new_igann, 'feature_effects'):
+            del new_igann.feature_effects
 
-
-
+        return new_igann
 
     def _flatten(self, l):
         return [item for sublist in l for item in sublist]
@@ -1335,6 +1343,15 @@ class IGANN_Bagged:
             preds.append(b.predict_proba(X))
         return np.array(preds).mean(0), np.array(preds).std(0)
 
+    def copy(self):
+        '''
+        Create copy of igann-bagged object
+        '''
+        new_igann_bagged = deepcopy(self)
+        new_igann_bagged.bags = [m.copy() for m in self.bags]
+
+        return new_igann_bagged
+
     def plot_single(
         self, plot_by_list=None, show_n=5, scaler_dict=None, max_cat_plotted=4
     ):
@@ -1629,8 +1646,8 @@ if __name__ == "__main__":
     y_train = (y_train - y_mean) / y_std
     y_test = (y_test - y_mean) / y_std
     start = time.time()
-    m = IGANN_Bagged(
-        task="regression", n_estimators=100, verbose=0, n_bags=5,
+    m = IGANN(
+        task="regression", n_estimators=100, verbose=0,
         act=[torch.nn.ELU(), torch.nn.LogSigmoid()]
     )  # , device='cuda'
     # m = IGANN(task='regression', n_estimators=100, verbose=0)
