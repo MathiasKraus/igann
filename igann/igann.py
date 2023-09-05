@@ -296,38 +296,54 @@ class IGANN:
         # explicitly.
         self.repeated_predictions = False 
 
-    def _clip_p(self, p):
-        if torch.max(p) > 100 or torch.min(p) < -100:
-            warnings.warn(
-                "Cutting prediction to [-100, 100]. Did you forget to scale y? Consider higher regularization elm_alpha."
-            )
-            return torch.clip(p, -100, 100)
-        else:
-            return p
+    def get_params(self, deep=True):
+        return {
+            "task": self.task,
+            "n_hid": self.n_hid,
+            "elm_scale": self.elm_scale,
+            "elm_alpha": self.elm_alpha,
+            "init_reg": self.init_reg,
+            "act": self.act,
+            "n_estimators": self.n_estimators,
+            "early_stopping": self.early_stopping,
+            "sparse": self.sparse,
+            "device": self.device,
+            "random_state": self.random_state,
+            "optimize_threshold": self.optimize_threshold,
+            "verbose": self.verbose,
+            "boost_rate": self.boost_rate,
+            # "target_remapped_flag": self.target_remapped_flag,
+        }
 
-    def _clip_p_numpy(self, p):
-        if np.max(p) > 100 or np.min(p) < -100:
-            warnings.warn(
-                "Cutting prediction to [-100, 100]. Did you forget to scale y? Consider higher regularization elm_alpha."
-            )
-            return np.clip(p, -100, 100)
-        else:
-            return p
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            if not hasattr(self, parameter):
+                raise ValueError(
+                    "Invalid parameter %s for estimator %s. Check the list of available parameters with `estimator.get_params().keys()`."
+                    % (parameter, self)
+                )
+            setattr(self, parameter, value)
+        return self
 
-    def _loss_sqrt_hessian(self, y, p):
-        """
-        This function computes the square root of the hessians of the log loss or the mean squared error.
-        """
-        if self.task == "classification":
-            return 0.5 / torch.cosh(0.5 * y * p)
+    def score(self, X, y, metric=None):
+        predictions = self.predict(X)
+        if self.task == "regression":
+            # if these is no metric specified use default regression metric "mse"
+            if metric is None:
+                metric = "mse"
+            metric_dict = {"mse": mean_squared_error, "r_2": r2_score}
+            return metric_dict[metric](y, predictions)
         else:
-            return torch.sqrt(torch.tensor([2.0]).to(self.device))
-
-    def _get_y_tilde(self, y, p):
-        if self.task == "classification":
-            return y / torch.exp(0.5 * y * p)
-        else:
-            return torch.sqrt(torch.tensor(2.0).to(self.device)) * (y - p)
+            if metric is None:
+                # if there is no metric specified use default classification metric "accuracy"
+                metric = "accuracy"
+            metric_dict = {
+                "accuracy": accuracy_score,
+                "precision": precision_score,
+                "recall": recall_score,
+                "f1": f1_score,
+            }
+            return metric_dict[metric](y, predictions)
 
     def _reset_state(self):
         self.regressors = []
@@ -396,12 +412,37 @@ class IGANN:
 
         return X
 
+    def _clip_p(self, p):
+        if torch.max(p) > 100 or torch.min(p) < -100:
+            warnings.warn(
+                "Cutting prediction to [-100, 100]. Did you forget to scale y? Consider higher regularization elm_alpha."
+            )
+            return torch.clip(p, -100, 100)
+        else:
+            return p
+
+    def _loss_sqrt_hessian(self, y, p):
+        """
+        This function computes the square root of the hessians of the log loss or the mean squared error.
+        """
+        if self.task == "classification":
+            return 0.5 / torch.cosh(0.5 * y * p)
+        else:
+            return torch.sqrt(torch.tensor([2.0]).to(self.device))
+
+    def _get_y_tilde(self, y, p):
+        if self.task == "classification":
+            return y / torch.exp(0.5 * y * p)
+        else:
+            return torch.sqrt(torch.tensor(2.0).to(self.device)) * (y - p)
+
     def fit(
         self,
         X,
         y,
         val_set=None,
         eval=None,
+        continue_training=False,
         plot_fixed_features=None,
         fitted_dummies=None,
     ):
@@ -413,30 +454,35 @@ class IGANN:
         val_set: can be tuple (X_val, y_val) for a defined validation set. If not set,
         it will be split from the training set randomly.
         eval: can be tuple (X_test, y_test) for additional evaluation during training
+        continue_training: If set to True, previous states, ELMs will be kept as a starting point
         plot_fixed_features: Per default the most important features are plotted for verbose=2.
         This can be changed here to keep track of the same feature throughout training.
         """
-        if self.task == "classification":
-            # todo: torch
-            self.init_classifier = LogisticRegression(
-                penalty="l1",
-                solver="liblinear",
-                C=1 / self.init_reg,
-                random_state=self.random_state,
-            )
-            # self.init_classifier = LogisticRegression(penalty='none', solver='lbfgs',
-            #                                          max_iter=2000, random_state=1337)
-            self.criterion = lambda prediction, target: torch.nn.BCEWithLogitsLoss()(
-                prediction, torch.nn.ReLU()(target)
-            )
-        elif self.task == "regression":
-            # todo: torch
-            self.init_classifier = Lasso(alpha=self.init_reg)
-            self.criterion = torch.nn.MSELoss()
+        if continue_training:
+            if not hasattr(self, "init_classifier"):
+                raise(ValueError, "continue_training set to True but no model has been trained before.")
+            
         else:
-            warnings.warn("Task not implemented. Can be classification or regression")
+            if self.task == "classification":
+                # todo: torch
+                self.init_classifier = LogisticRegression(
+                    penalty="l1",
+                    solver="liblinear",
+                    C=1 / self.init_reg,
+                    random_state=self.random_state,
+                )
+                self.criterion = lambda prediction, target: torch.nn.BCEWithLogitsLoss()(
+                    prediction, torch.nn.ReLU()(target)
+                )
+            elif self.task == "regression":
+                # todo: torch
+                self.init_classifier = Lasso(alpha=self.init_reg)
+                self.criterion = torch.nn.MSELoss()
+            else:
+                warnings.warn("Task not implemented. Can be classification or regression")
 
-        self._reset_state()
+            self._reset_state()
+
         if fitted_dummies != None:
             self.get_dummies = fitted_dummies
             X = self._preprocess_feature_matrix(X, fit_dummies=False)
@@ -464,8 +510,9 @@ class IGANN:
         else:
             self.feature_indizes = np.arange(X.shape[1])
 
-        # Fit the linear model on all data
-        self.init_classifier.fit(X, y)
+        if not continue_training:
+            # Fit the linear model on all data
+            self.init_classifier.fit(X, y)
 
         # Split the data into train and validation data and compute the prediction of the
         # linear model. For regression this is straightforward, for classification, we
@@ -482,14 +529,21 @@ class IGANN:
                 X_val = val_set[0]
                 y_val = val_set[1]
 
-            y_hat = torch.squeeze(
-                torch.from_numpy(self.init_classifier.coef_.astype(np.float32))
-                @ torch.transpose(X, 0, 1)
-            ) + float(self.init_classifier.intercept_)
-            y_hat_val = torch.squeeze(
-                torch.from_numpy(self.init_classifier.coef_.astype(np.float32))
-                @ torch.transpose(X_val, 0, 1)
-            ) + float(self.init_classifier.intercept_)
+            if continue_training:
+                y_hat = self.predict_raw(X, preprocess_matrix=False)
+                y_hat_val = self.predict_raw(X_val, preprocess_matrix=False)
+
+                y_hat = torch.squeeze(torch.from_numpy(y_hat).float())
+                y_hat_val = torch.squeeze(torch.from_numpy(y_hat_val).float())
+            else:
+                y_hat = torch.squeeze(
+                    torch.from_numpy(self.init_classifier.coef_.astype(np.float32))
+                    @ torch.transpose(X, 0, 1)
+                ) + float(self.init_classifier.intercept_)
+                y_hat_val = torch.squeeze(
+                    torch.from_numpy(self.init_classifier.coef_.astype(np.float32))
+                    @ torch.transpose(X_val, 0, 1)
+                ) + float(self.init_classifier.intercept_)
 
         else:
             if val_set == None:
@@ -502,12 +556,19 @@ class IGANN:
                 X_val = val_set[0]
                 y_val = val_set[1].squeeze()
 
-            y_hat = torch.from_numpy(
-                self.init_classifier.predict(X).squeeze().astype(np.float32)
-            )
-            y_hat_val = torch.from_numpy(
-                self.init_classifier.predict(X_val).squeeze().astype(np.float32)
-            )
+            if continue_training:
+                y_hat = self.predict_raw(X, preprocess_matrix=False)
+                y_hat_val = self.predict_raw(X_val, preprocess_matrix=False)
+
+                y_hat = torch.squeeze(torch.from_numpy(y_hat).float())
+                y_hat_val = torch.squeeze(torch.from_numpy(y_hat_val).float())
+            else:
+                y_hat = torch.from_numpy(
+                    self.init_classifier.predict(X).squeeze().astype(np.float32)
+                )
+                y_hat_val = torch.from_numpy(
+                    self.init_classifier.predict(X_val).squeeze().astype(np.float32)
+                )
 
         # Store some information about the dataset which we later use for plotting.
         self.X_min = list(X.min(axis=0))
@@ -555,55 +616,6 @@ class IGANN:
             self.best_threshold = self._optimize_classification_threshold(X, y)
 
         return
-
-    def get_params(self, deep=True):
-        return {
-            "task": self.task,
-            "n_hid": self.n_hid,
-            "elm_scale": self.elm_scale,
-            "elm_alpha": self.elm_alpha,
-            "init_reg": self.init_reg,
-            "act": self.act,
-            "n_estimators": self.n_estimators,
-            "early_stopping": self.early_stopping,
-            "sparse": self.sparse,
-            "device": self.device,
-            "random_state": self.random_state,
-            "optimize_threshold": self.optimize_threshold,
-            "verbose": self.verbose,
-            "boost_rate": self.boost_rate,
-            # "target_remapped_flag": self.target_remapped_flag,
-        }
-
-    def set_params(self, **parameters):
-        for parameter, value in parameters.items():
-            if not hasattr(self, parameter):
-                raise ValueError(
-                    "Invalid parameter %s for estimator %s. Check the list of available parameters with `estimator.get_params().keys()`."
-                    % (parameter, self)
-                )
-            setattr(self, parameter, value)
-        return self
-
-    def score(self, X, y, metric=None):
-        predictions = self.predict(X)
-        if self.task == "regression":
-            # if these is no metric specified use default regression metric "mse"
-            if metric is None:
-                metric = "mse"
-            metric_dict = {"mse": mean_squared_error, "r_2": r2_score}
-            return metric_dict[metric](y, predictions)
-        else:
-            if metric is None:
-                # if there is no metric specified use default classification metric "accuracy"
-                metric = "accuracy"
-            metric_dict = {
-                "accuracy": accuracy_score,
-                "precision": precision_score,
-                "recall": recall_score,
-                "f1": f1_score,
-            }
-            return metric_dict[metric](y, predictions)
 
     def _run_optimization(
         self, X, y, y_hat, X_val, y_val, y_hat_val, eval, best_loss, plot_fixed_features
@@ -836,7 +848,6 @@ class IGANN:
             pred = self.predict_raw_repeated_values(X)
         else:
             pred = self.predict_raw(X)
-        pred = self._clip_p_numpy(pred)
         pred = 1 / (1 + np.exp(-pred))
 
         ret = np.zeros((len(X), 2), dtype=np.float32)
@@ -875,13 +886,14 @@ class IGANN:
 
             return pred
 
-    def predict_raw(self, X):
+    def predict_raw(self, X, preprocess_matrix=True):
         """
         This function returns a prediction for a given feature matrix X.
         Note: for a classification task, it returns the raw logit values.
         """
-        X = self._preprocess_feature_matrix(X, fit_dummies=False).to(self.device)
-        X = X[:, self.feature_indizes]
+        if preprocess_matrix:
+            X = self._preprocess_feature_matrix(X, fit_dummies=False).to(self.device)
+            X = X[:, self.feature_indizes]
 
         pred_nn = torch.zeros(len(X), dtype=torch.float32).to(self.device)
         for boost_rate, regressor in zip(self.boosting_rates, self.regressors):
@@ -896,15 +908,16 @@ class IGANN:
 
         return pred
     
-    def predict_raw_repeated_values(self, X):
+    def predict_raw_repeated_values(self, X, preprocess_matrix=True):
         """
         This function returns a prediction for a given feature matrix X
         and stores the predicted values of the shape functions. For a prediction
         with the exact same feature values, the prediction is then a simple lookup.
         Note: for a classification task, it returns the raw logit values.
         """
-        X = self._preprocess_feature_matrix(X, fit_dummies=False).to(self.device)
-        X = X[:, self.feature_indizes]
+        if preprocess_matrix:
+            X = self._preprocess_feature_matrix(X, fit_dummies=False).to(self.device)
+            X = X[:, self.feature_indizes]
 
         if not hasattr(self, 'feature_effects'):
             self.feature_effects = dict(zip(range(X.shape[1]), [dict() for _ in range(X.shape[1])]))
@@ -1647,7 +1660,7 @@ if __name__ == "__main__":
     y_test = (y_test - y_mean) / y_std
     start = time.time()
     m = IGANN(
-        task="regression", n_estimators=100, verbose=0,
+        task="regression", n_estimators=100, verbose=1,
         act=[torch.nn.ELU(), torch.nn.LogSigmoid()]
     )  # , device='cuda'
     # m = IGANN(task='regression', n_estimators=100, verbose=0)
