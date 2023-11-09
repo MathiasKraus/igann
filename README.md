@@ -102,22 +102,6 @@ we obtain the following shape functions
 
 ![image](https://github.com/MathiasKraus/igann/assets/15181429/9c0607a9-f4ac-4515-b098-22500aef147b)
 
-
-### Sparse regression example
-
-In many cases, it makes sense to train a sparse IGANN model, i.e., a model which only basis its output on few features. This generally increases the ease of understanding the model behavior.
-
-```
-from igann import IGANN
-model = IGANN(task='regression', sparse=5)
-model.fit(X, y)
-model.plot_single()
-```
-
-yields (note that the sparse parameters denotes the max number of features)
-
-![image](https://github.com/MathiasKraus/igann/assets/15181429/1ef6a099-4e09-471a-9e6f-da955dbff23d)
-
 # Citations
 ```latex
 @article{kraus2023interpretable,
