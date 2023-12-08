@@ -54,7 +54,6 @@ When initializing IGANN, the following parameters can be set:
 - init_reg: the initial regularization strength for the linear model.
 - elm_scale: the scale of the random weights in the elm model.
 - elm_alpha: the regularization strength for the ridge regression in the ELM model.
-- sparse: Tells if IGANN should be sparse or not. Integer denotes the max number of used features
 - act: the activation function in the ELM model. Can be 'elu', 'relu' or a torch activation function.
 - early_stopping: If there has been no improvements for 'early_stopping' number of iterations, training is stopped.
 - device: the device on which the model is optimized. Can be 'cpu' or 'cuda'
@@ -135,22 +134,6 @@ grid_search.fit(X, y)
 print("Best parameters:", grid_search.best_params_)
 print("Best score:", grid_search.best_score_)
 ```
-
-
-### Sparse regression example
-
-In many cases, it makes sense to train a sparse IGANN model, i.e., a model which only basis its output on few features. This generally increases the ease of understanding the model behavior.
-
-```
-from igann import IGANN
-model = IGANN(task='regression', sparse=5)
-model.fit(X, y)
-model.plot_single()
-```
-
-yields (note that the sparse parameters denotes the max number of features)
-
-![image](https://github.com/MathiasKraus/igann/assets/15181429/1ef6a099-4e09-471a-9e6f-da955dbff23d)
 
 # Citations
 ```latex
