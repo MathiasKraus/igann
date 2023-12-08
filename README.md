@@ -102,6 +102,40 @@ we obtain the following shape functions
 
 ![image](https://github.com/MathiasKraus/igann/assets/15181429/9c0607a9-f4ac-4515-b098-22500aef147b)
 
+### Scikit-Learn Integration with IGANN
+
+or scikit-learn users, we offer IGANNClassifier and IGANNRegressor classes. These are optimized for scikit-learn's ecosystem, ensuring full compatibility with its tools and conventions. IGANNClassifier is ideal for classification tasks, and IGANNRegressor for regression. Both integrate smoothly with scikit-learn's features like cross-validation and grid search, allowing easy incorporation of IGANN's capabilities into your machine learning projects.
+
+Import them directly from the igann package:
+```
+from igann import IGANNClassifier, IGANNRegressor
+from sklearn.model_selection import GridSearchCV
+from sklearn.datasets import load_iris
+
+# Load sample data
+X, y = load_iris(return_X_y=True)
+
+# Initialize the IGANNClassifier
+igann_classifier = IGANNClassifier()
+
+# Define the parameter grid to search
+param_grid = {
+    'learning_rate': [0.01, 0.1, 0.2],
+    'n_iter_no_change': [10, 20, 30],
+    # add other parameters you wish to tune
+}
+
+# Create GridSearchCV object
+grid_search = GridSearchCV(igann_classifier, param_grid, cv=5, scoring='accuracy')
+
+# Perform grid search on the data
+grid_search.fit(X, y)
+
+# Best parameters and score
+print("Best parameters:", grid_search.best_params_)
+print("Best score:", grid_search.best_score_)
+```
+
 
 ### Sparse regression example
 
