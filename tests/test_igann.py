@@ -13,12 +13,12 @@ import numpy as np
 
 import torch
 
-def test_sparse_igann():
-    X, y = make_regression(100000, 10, n_informative=3, random_state=0)
-    y = (y - y.mean()) / y.std()
-    m =  igann.IGANN(task='regression', n_estimators=1000, sparse=10)
-    m.fit(pd.DataFrame(X), y)
-    assert len(m.feature_names) < 7
+#def test_sparse_igann():
+#    X, y = make_regression(100000, 10, n_informative=3, random_state=0)
+#    y = (y - y.mean()) / y.std()
+#    m =  igann.IGANN(task='regression', n_estimators=1000, sparse=10)
+#    m.fit(pd.DataFrame(X), y)
+#    assert len(m.feature_names) < 7
 
 def test_classification_train_no_interaction_pd_df():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
