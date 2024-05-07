@@ -343,7 +343,9 @@ class IGANN:
         '''
 
         self._reset_state()
-
+        X_copy = deepcopy(X)
+        y_copy = deepcopy(y)
+        # we need to keep the original X and y for threshold_optimization otherwise this becomes torch tensor and never gets converted back to pandas dataframe
         if fitted_dummies != None:
             self.get_dummies = fitted_dummies
             X = self._preprocess_feature_matrix(X, fit_dummies=False)
@@ -428,8 +430,10 @@ class IGANN:
         self._run_optimization(X, y, y_hat, X_val, y_val, y_hat_val, eval,
                                             val_loss_init, plot_fixed_features)
 
-        if self.task == 'classification' and self.optimize_threshold:
-            self.best_threshold = self._optimize_classification_threshold(X, y)
+        if self.task == "classification" and self.optimize_threshold:
+            self.best_threshold = self._optimize_classification_threshold(
+                X_copy, y_copy
+            )
 
         return
 
@@ -586,33 +590,68 @@ class IGANN:
                     new_best_symb, counter, boost_rate, train_loss, val_loss))
 
     def _optimize_classification_threshold(self, X_train, y_train):
-        '''
-        This function optimizes the classification threshold for the training set for later predictions.
-        The use of the function is triggered by setting the parameter optimize_threshold to True.
-        This is one method which does the job. However, we noticed that it is not always the best method and hence it
-        defaults to no threshold optimization.
-        '''
+        """
+        Optimize the classification threshold for the training set by selecting the threshold that minimizes
+        the Euclidean distance to the perfect classification point (FPR = 0, TPR = 1).
+        This aims for an optimal combination of low false positives and high true positives.
+        """
+        y_proba = self.predict_proba(X_train)[:, 1]
 
-        y_proba = self.predict_raw(X_train)
+        # Convert tensors to numpy arrays if necessary (applicable if using PyTorch or TensorFlow)
+        if hasattr(y_proba, "detach"):
+            y_proba = y_proba.detach().cpu().numpy()
+        if hasattr(y_train, "detach"):
+            y_train = y_train.detach().cpu().numpy()
 
-        # detach and numpy
-        y_proba = y_proba.detach().cpu().numpy()
-        y_train = y_train.detach().cpu().numpy()
-        fpr, tpr, trs = roc_curve(y_train, y_proba)
+        # Compute ROC curve
+        fpr, tpr, thresholds = roc_curve(y_train, y_proba)
 
-        roc_scores = []
-        thresholds = []
-        for thres in trs:
-            thresholds.append(thres)
-            y_pred = np.where(y_proba > thres, 1, -1)
-            # Apply desired utility function to y_preds, for example accuracy.
-            roc_scores.append(roc_auc_score(y_train.squeeze(), y_pred.squeeze()))
-        # convert roc_scores to numpy array
-        roc_scores = np.array(roc_scores)
-        # get the index of the best threshold
-        ix = np.argmax(roc_scores)
-        # get the best threshold
-        return thresholds[ix]
+        # Create a DataFrame from the FPR, TPR, and thresholds
+        roc_df = pd.DataFrame({"FPR": fpr, "TPR": tpr, "Thresholds": thresholds})
+
+        print(roc_df)
+
+        # Define the distance function from each point on the ROC curve to (fpr = 0, tpr = 1)
+        roc_df["Distance"] = np.sqrt((roc_df["FPR"]) ** 2 + (roc_df["TPR"] - 1) ** 2)
+
+        # Find the index of the row with the minimal distance
+        min_distance_index = roc_df["Distance"].idxmin()
+
+        # Get the best threshold at this index
+        best_threshold = roc_df.loc[min_distance_index, "Thresholds"]
+        self.best_threshold = best_threshold
+
+        if self.verbose == 1:
+            # Plotting the ROC curve with the chosen threshold
+
+            best_fpr = roc_df.loc[min_distance_index, "FPR"]
+            best_tpr = roc_df.loc[min_distance_index, "TPR"]
+            min_dist = roc_df.loc[min_distance_index, "Distance"]
+
+            fig, ax1 = plt.subplots(figsize=(6, 6))
+            ax1.plot(fpr, tpr, label="ROC Curve")
+            ax1.plot(
+                best_fpr,
+                best_tpr,
+                "ro",
+                label=f"Optimal Threshold at {best_threshold:.4f}",
+            )
+            ax1.plot(
+                [0, best_fpr],
+                [1, best_tpr],
+                "g--",
+                label=f"Min distance: {min_dist:.4f}",
+            )
+
+            ax1.set_xlabel("False Positive Rate")
+            ax1.set_ylabel("True Positive Rate")
+            ax1.set_title("ROC Curve and Distance to Ideal Point")
+            ax1.legend(loc="lower right")
+            ax1.grid(True)
+
+            plt.show()
+
+        return best_threshold  # just for testing
 
     def predict_proba(self, X):
         '''
@@ -642,18 +681,19 @@ class IGANN:
         if self.task == 'regression':
             return self.predict_raw(X)
         else:
-            pred_raw = self.predict_raw(X)
-            # detach and numpy pred_raw
-            if self.optimize_threshold:
-                threshold = self.best_threshold
-            else:
-                threshold = 0
-            pred = np.where(pred_raw < threshold, np.ones_like(pred_raw) * -1, np.ones_like(pred_raw)).squeeze()
+            y_proba = self.predict_proba(X)[:, 1]
 
+            # Select the threshold
+            threshold = self.best_threshold if self.optimize_threshold else 0.5
+
+            # Generate predictions based on the threshold
+            y_pred = np.where(y_proba < threshold, -1, 1)
+
+            # Remap predictions if required
             if self.target_remapped_flag:
-                pred = np.where(pred == -1, 0, 1)
+                y_pred = np.where(y_pred == -1, 0, 1)
 
-            return pred
+            return y_pred
 
     def predict_raw(self, X):
         '''
