@@ -1043,9 +1043,11 @@ class IGANN:
 
                     idxs_to_plot = np.argpartition(
                         np.abs(d["y"]),
-                        -(len(d["y"]) - 1)
-                        if len(d["y"]) <= (max_cat_plotted - 1)
-                        else -(max_cat_plotted - 1),
+                        (
+                            -(len(d["y"]) - 1)
+                            if len(d["y"]) <= (max_cat_plotted - 1)
+                            else -(max_cat_plotted - 1)
+                        ),
                     )[-(max_cat_plotted - 1) :]
                     y_to_plot = d["y"][idxs_to_plot]
                     x_to_plot = d["x"][idxs_to_plot].tolist()
@@ -1095,9 +1097,11 @@ class IGANN:
 
                     idxs_to_plot = np.argpartition(
                         np.abs(d["y"]),
-                        -(len(d["y"]) - 1)
-                        if len(d["y"]) <= (max_cat_plotted - 1)
-                        else -(max_cat_plotted - 1),
+                        (
+                            -(len(d["y"]) - 1)
+                            if len(d["y"]) <= (max_cat_plotted - 1)
+                            else -(max_cat_plotted - 1)
+                        ),
                     )[-(max_cat_plotted - 1) :]
                     y_to_plot = d["y"][idxs_to_plot]
                     x_to_plot = d["x"][idxs_to_plot].tolist()
@@ -1197,6 +1201,91 @@ class IGANN:
             )
         plt.legend()
         plt.show()
+
+
+class GAMmodel:
+    def __init__(
+        self,
+        model,
+        task,
+    ):
+        self.base_model = model
+        self.task = task
+        self.GAM = None
+        self.feature_dict = {}
+
+    def set_shape_functions(self):
+
+        shape_data = self.base_model.get_shape_functions_as_dict()
+        # print(shape_data)
+        for feature in shape_data:
+
+            feature_name = feature["name"]
+            feature_type = feature["datatype"]
+            feature_x = feature["x"]
+            feature_y = feature["y"]
+            print(feature_name)
+            print(feature_type)
+
+            feature_x_new, feature_y_new = self.create_points(feature_x, feature_y, 100)
+            self.feature_dict[feature_name] = {
+                "datatype": feature_type,
+                "x": feature_x_new,
+                "y": feature_y_new,
+            }
+
+    def create_points(self, X, Y, num_points):
+        min_x, max_x = min(X), max(X)
+        # print(min_x, max_x)
+        x_values = np.linspace(min_x, max_x, num_points)
+        artificial_points_X = []
+        artificial_points_Y = []
+
+        for x in x_values:
+            # Find the indices of the points on either side of x
+            idx1 = np.searchsorted(X, x)
+            if idx1 == 0:
+                y = Y[0]
+            elif idx1 == len(X):
+                y = Y[-1]
+            else:
+                x1, y1 = X[idx1 - 1], Y[idx1 - 1]
+                x2, y2 = X[idx1], Y[idx1]
+                # Compute the weighted average of the y-values of the points on either side
+                y = y1 + (x - x1) * (y2 - y1) / (x2 - x1)
+            # Append the artificial point
+            artificial_points_X.append(x)
+            artificial_points_Y.append(y)
+
+        return artificial_points_X, artificial_points_Y
+
+    def predict_single(self, feature_name, x):
+        feature = self.feature_dict[feature_name]
+        x_values = feature["x"]
+        y_values = feature["y"]
+        y = np.interp(
+            x, x_values, y_values
+        )  # Linear interpolation # also strategies for interpolation beyond x limtis can be created here.
+        return y
+
+    def predict_raw(self, df):
+        print("predict!")
+        y = {}
+        for col in df.columns:
+            y[col] = self.predict_single(col, df[col])
+        y = pd.DataFrame(y)
+        y_predict_raw = np.array(y.sum(axis=1))
+        return y_predict_raw
+
+    def predict_proba(self, df):
+        y_predict_raw = self.predict_raw(df)
+        y_predict_proba = 1 / (1 + np.exp(-y_predict_raw))
+        return y_predict_proba
+
+    def predict(self, df, threshold=0.5):
+        y_predict_proba = self.predict_proba(df)
+        y_predict = np.where(y_predict_proba > threshold, 1, 0)
+        return y_predict
 
 
 class IGANN_Bagged:
@@ -1379,9 +1468,11 @@ class IGANN_Bagged:
 
                     idxs_to_plot = np.argpartition(
                         np.abs(y_mean_and_std[:, 0]),
-                        -(len(y_mean_and_std) - 1)
-                        if len(y_mean_and_std) <= (max_cat_plotted - 1)
-                        else -(max_cat_plotted - 1),
+                        (
+                            -(len(y_mean_and_std) - 1)
+                            if len(y_mean_and_std) <= (max_cat_plotted - 1)
+                            else -(max_cat_plotted - 1)
+                        ),
                     )[-(max_cat_plotted - 1) :]
                     d_X = [d["x"][i] for i in idxs_to_plot]
                     y_mean_and_std_to_plot = y_mean_and_std[:, :][idxs_to_plot]
@@ -1454,9 +1545,11 @@ class IGANN_Bagged:
 
                     idxs_to_plot = np.argpartition(
                         np.abs(y_mean_and_std[:, 0]),
-                        -(len(y_mean_and_std) - 1)
-                        if len(y_mean_and_std) <= (max_cat_plotted - 1)
-                        else -(max_cat_plotted - 1),
+                        (
+                            -(len(y_mean_and_std) - 1)
+                            if len(y_mean_and_std) <= (max_cat_plotted - 1)
+                            else -(max_cat_plotted - 1)
+                        ),
                     )[-(max_cat_plotted - 1) :]
                     d_X = [d["x"][i] for i in idxs_to_plot]
                     y_mean_and_std_to_plot = y_mean_and_std[:, :][idxs_to_plot]
