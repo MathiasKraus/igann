@@ -550,6 +550,7 @@ class IGANN:
         if self.task == "classification" and self.optimize_threshold:
             self.best_threshold = self._optimize_classification_threshold(X, y)
 
+        self._get_feature_importance(first_call=True)
         return
 
     def get_params(self, deep=True):
@@ -1198,6 +1199,20 @@ class IGANN:
         plt.legend()
         plt.show()
 
+    def _get_feature_importance(self, first_call=False):
+        if first_call:
+            self.feature_importances_ = self._get_feature_importance(first_call=False)
+            # should not slow down fit if feature importance is never used
+        else:
+            shape_functions = self.get_shape_functions_as_dict()
+            self.feature_importances_ = np.zeros(shape=(len(shape_functions),))
+            for i, sf in enumerate(shape_functions):
+                self.feature_importances_[i] = sf['avg_effect']
+            total = np.sum(self.feature_importances_)
+            self.feature_importances_ /= total
+            self.feature_importances_ *= 100
+        return self.feature_importances_
+
 
 class IGANN_Bagged:
     def __init__(
@@ -1580,11 +1595,12 @@ if __name__ == "__main__":
     y_train = (y_train - y_mean) / y_std
     y_test = (y_test - y_mean) / y_std
     start = time.time()
-    m = IGANN_Bagged(
-        task="regression", n_estimators=100, verbose=0, n_bags=5
-    )  # , device='cuda'
-    # m = IGANN(task='regression', n_estimators=100, verbose=0)
+    # m = IGANN_Bagged(
+    #     task="regression", n_estimators=100, verbose=0, n_bags=5
+    # )  # , device='cuda'
+    m = IGANN(task='regression', n_estimators=100, verbose=0)
     m.fit(pd.DataFrame(X_train), y_train)
+    print(m.feature_importances_)
     end = time.time()
     print(end - start)
     m.plot_single(show_n=6, max_cat_plotted=4)
