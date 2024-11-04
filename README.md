@@ -119,8 +119,7 @@ igann_classifier = IGANNClassifier()
 
 # Define the parameter grid to search
 param_grid = {
-    'learning_rate': [0.01, 0.1, 0.2],
-    'n_iter_no_change': [10, 20, 30],
+    'boost_rate': [0.01, 0.1, 0.2],
     # add other parameters you wish to tune
 }
 
