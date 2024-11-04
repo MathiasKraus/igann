@@ -107,12 +107,15 @@ or scikit-learn users, we offer IGANNClassifier and IGANNRegressor classes. Thes
 
 Import them directly from the igann package:
 ```
+import pandas as pd
 from igann import IGANNClassifier, IGANNRegressor
 from sklearn.model_selection import GridSearchCV
-from sklearn.datasets import load_iris
+from sklearn.datasets import load_breast_cancer
 
 # Load sample data
-X, y = load_iris(return_X_y=True)
+X, y = load_breast_cancer(return_X_y=True)
+
+X = pd.DataFrame(X)
 
 # Initialize the IGANNClassifier
 igann_classifier = IGANNClassifier()
