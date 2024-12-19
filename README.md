@@ -95,7 +95,7 @@ model.fit(X, y)
 
 With 
 ```
-model.plot_single(plot_by_list=['age', 'bmi', 'bp', 'sex', 's1', 's2'])
+model.plot_single()
 ```
 we obtain the following shape functions
 
