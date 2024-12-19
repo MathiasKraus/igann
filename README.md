@@ -54,7 +54,6 @@ When initializing IGANN, the following parameters can be set:
 - init_reg: the initial regularization strength for the linear model.
 - elm_scale: the scale of the random weights in the elm model.
 - elm_alpha: the regularization strength for the ridge regression in the ELM model.
-- sparse: Tells if IGANN should be sparse or not. Integer denotes the max number of used features
 - act: the activation function in the ELM model. Can be 'elu', 'relu' or a torch activation function.
 - early_stopping: If there has been no improvements for 'early_stopping' number of iterations, training is stopped.
 - device: the device on which the model is optimized. Can be 'cpu' or 'cuda'
@@ -96,7 +95,7 @@ model.fit(X, y)
 
 With 
 ```
-model.plot_single(plot_by_list=['age', 'bmi', 'bp', 'sex', 's1', 's2'])
+model.plot_single()
 ```
 we obtain the following shape functions
 
@@ -108,20 +107,22 @@ or scikit-learn users, we offer IGANNClassifier and IGANNRegressor classes. Thes
 
 Import them directly from the igann package:
 ```
+import pandas as pd
 from igann import IGANNClassifier, IGANNRegressor
 from sklearn.model_selection import GridSearchCV
-from sklearn.datasets import load_iris
+from sklearn.datasets import load_breast_cancer
 
 # Load sample data
-X, y = load_iris(return_X_y=True)
+X, y = load_breast_cancer(return_X_y=True)
+
+X = pd.DataFrame(X)
 
 # Initialize the IGANNClassifier
 igann_classifier = IGANNClassifier()
 
 # Define the parameter grid to search
 param_grid = {
-    'learning_rate': [0.01, 0.1, 0.2],
-    'n_iter_no_change': [10, 20, 30],
+    'boost_rate': [0.01, 0.1, 0.2],
     # add other parameters you wish to tune
 }
 
@@ -135,22 +136,6 @@ grid_search.fit(X, y)
 print("Best parameters:", grid_search.best_params_)
 print("Best score:", grid_search.best_score_)
 ```
-
-
-### Sparse regression example
-
-In many cases, it makes sense to train a sparse IGANN model, i.e., a model which only basis its output on few features. This generally increases the ease of understanding the model behavior.
-
-```
-from igann import IGANN
-model = IGANN(task='regression', sparse=5)
-model.fit(X, y)
-model.plot_single()
-```
-
-yields (note that the sparse parameters denotes the max number of features)
-
-![image](https://github.com/MathiasKraus/igann/assets/15181429/1ef6a099-4e09-471a-9e6f-da955dbff23d)
 
 # Citations
 ```latex

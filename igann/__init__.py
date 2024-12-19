@@ -1,4 +1,4 @@
 from .igann import IGANN
-from .igann import IGANN_Bagged
-from .igann import GAMmodel
+
+# from .igann_bagged import IGANN_Bagged
 from .igannSklearn import IGANNClassifier, IGANNRegressor

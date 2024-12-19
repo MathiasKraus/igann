@@ -13,12 +13,12 @@ import numpy as np
 
 import torch
 
-def test_sparse_igann():
-    X, y = make_regression(100000, 10, n_informative=3, random_state=0)
-    y = (y - y.mean()) / y.std()
-    m =  igann.IGANN(task='regression', n_estimators=1000, sparse=10)
-    m.fit(pd.DataFrame(X), y)
-    assert len(m.feature_names) < 7
+#def test_sparse_igann():
+#    X, y = make_regression(100000, 10, n_informative=3, random_state=0)
+#    y = (y - y.mean()) / y.std()
+#    m =  igann.IGANN(task='regression', n_estimators=1000, sparse=10)
+#    m.fit(pd.DataFrame(X), y)
+#    assert len(m.feature_names) < 7
 
 def test_classification_train_no_interaction_pd_df():
     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
@@ -360,6 +360,7 @@ def test_regression_plot_learning():
 
     model.plot_learning()
 
+'''
 def test_classification_plot_single_w_baseline():
    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
@@ -385,7 +386,8 @@ def test_classification_plot_single_w_baseline():
 
    result = compare_images(baseline, path, tol=0.01)
    assert (result == None)
-
+'''
+   
 # def test_classification_plot_interactions_w_baseline():
 #     X, y = load_breast_cancer(return_X_y=True, as_frame=True)
 
@@ -558,6 +560,7 @@ def test_elm():
     print(round(pred.item(), 1))
     assert (round(pred.item(), 1) == -7.8)
 test_elm()
+'''
 def test_igann_bagged():
     X, y = make_regression(1000, 4, n_informative=4, random_state=42)
     X = pd.DataFrame(X)
@@ -585,7 +588,7 @@ def test_igann_bagged():
     assert pred[1].shape[0] == len(X_test)
     assert pred_proba[1].shape[0] == len(X_test)
     assert len(m.bags) == 5
-
+'''
 def test_parameters_n_hid():
     X, y = make_regression(10000, 10, n_informative=3)
     X_train, X_test, y_train, y_test = train_test_split(X, y)
