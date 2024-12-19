@@ -228,7 +228,6 @@ class IGANN:
         early_stopping=50,
         device="cpu",
         random_state=1,
-        optimize_threshold=False,
         verbose=0,
     ):
         """
@@ -246,7 +245,6 @@ class IGANN:
         models, if there has been no improvements for 'early_stopping' number of iterations.
         device: the device on which the model is optimized. Can be 'cpu' or 'cuda'
         random_state: random seed.
-        optimize_threshold: if True, the threshold for the classification is optimized using train data only and using the ROC curve. Otherwise, per default the raw logit value greater 0 means class 1 and less 0 means class -1.
         verbose: tells how much information should be printed when fitting. Can be 0 for (almost) no
         information, 1 for printing losses, and 2 for plotting shape functions in each iteration.
         """
@@ -261,36 +259,10 @@ class IGANN:
         self.sparse = sparse
         self.device = device
         self.random_state = random_state
-        self.optimize_threshold = optimize_threshold
         self.verbose = verbose
-        ###### this is not needed since these are just for one run! ######
-        # self.regressors = []
-        # self.boosting_rates = []
-        # self.train_scores = []
-        # self.val_scores = []
-        # self.train_losses = []
-        # self.val_losses = []
-        # self.test_losses = []
-        # self.regressor_predictions = []
         self.boost_rate = boost_rate
         self.target_remapped_flag = False
         """Is set to true during the fit method if the target (y) is remapped to -1 and 1 instead of 0 and 1."""
-
-        ###### moved this to fit function to be more in line with sklearn. I also think would be normal to have to classes for reg and class######
-        # if task == 'classification':
-        #     # todo: torch
-        #     self.init_classifier = LogisticRegression(penalty='l1', solver='liblinear', C=1 / self.init_reg,
-        #                                              random_state=random_state)
-        #     #self.init_classifier = LogisticRegression(penalty='none', solver='lbfgs',
-        #     #                                          max_iter=2000, random_state=1337)
-        #     self.criterion = lambda prediction, target: torch.nn.BCEWithLogitsLoss()(prediction,
-        #                                                                              torch.nn.ReLU()(target))
-        # elif task == 'regression':
-        #     # todo: torch
-        #     self.init_classifier = Lasso(alpha=self.init_reg)
-        #     self.criterion = torch.nn.MSELoss()
-        # else:
-        #     warnings.warn('Task not implemented. Can be classification or regression')
 
     def _clip_p(self, p):
         if torch.max(p) > 100 or torch.min(p) < -100:
@@ -547,9 +519,6 @@ class IGANN:
             plot_fixed_features,
         )
 
-        if self.task == "classification" and self.optimize_threshold:
-            self.best_threshold = self._optimize_classification_threshold(X, y)
-
         self._get_feature_importance(first_call=True)
         return
 
@@ -566,7 +535,6 @@ class IGANN:
             "sparse": self.sparse,
             "device": self.device,
             "random_state": self.random_state,
-            "optimize_threshold": self.optimize_threshold,
             "verbose": self.verbose,
             "boost_rate": self.boost_rate,
             # "target_remapped_flag": self.target_remapped_flag,
@@ -789,35 +757,6 @@ class IGANN:
                 )
             )
 
-    def _optimize_classification_threshold(self, X_train, y_train):
-        """
-        This function optimizes the classification threshold for the training set for later predictions.
-        The use of the function is triggered by setting the parameter optimize_threshold to True.
-        This is one method which does the job. However, we noticed that it is not always the best method and hence it
-        defaults to no threshold optimization.
-        """
-
-        y_proba = self.predict_raw(X_train)
-
-        # detach and numpy
-        y_proba = y_proba.detach().cpu().numpy()
-        y_train = y_train.detach().cpu().numpy()
-        fpr, tpr, trs = roc_curve(y_train, y_proba)
-
-        roc_scores = []
-        thresholds = []
-        for thres in trs:
-            thresholds.append(thres)
-            y_pred = np.where(y_proba > thres, 1, -1)
-            # Apply desired utility function to y_preds, for example accuracy.
-            roc_scores.append(roc_auc_score(y_train.squeeze(), y_pred.squeeze()))
-        # convert roc_scores to numpy array
-        roc_scores = np.array(roc_scores)
-        # get the index of the best threshold
-        ix = np.argmax(roc_scores)
-        # get the best threshold
-        return thresholds[ix]
-
     def predict_proba(self, X):
         """
         Similarly to sklearn, this function returns a matrix of the same length as X and two columns.
@@ -843,19 +782,14 @@ class IGANN:
         """
         This function returns a prediction for a given feature matrix X.
         Note: for a classification task, it returns the binary target values in a 1-d np.array, it can hold -1 and 1.
-        If optimize_threshold is True for a classification task, the threshold is optimized on the training data.
         """
         if self.task == "regression":
             return self.predict_raw(X)
         else:
             pred_raw = self.predict_raw(X)
             # detach and numpy pred_raw
-            if self.optimize_threshold:
-                threshold = self.best_threshold
-            else:
-                threshold = 0
             pred = np.where(
-                pred_raw < threshold,
+                pred_raw < 0,
                 np.ones_like(pred_raw) * -1,
                 np.ones_like(pred_raw),
             ).squeeze()
@@ -1230,7 +1164,6 @@ class IGANN_Bagged:
         early_stopping=50,
         device="cpu",
         random_state=1,
-        optimize_threshold=False,
         verbose=0,
     ):
         2
@@ -1251,7 +1184,6 @@ class IGANN_Bagged:
                 early_stopping,
                 device,
                 random_state + i,
-                optimize_threshold,
                 verbose=verbose,
             )
             for i in range(n_bags)
