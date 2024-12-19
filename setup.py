@@ -22,7 +22,6 @@ setup(
         'torch>=1.9.0',
         'matplotlib',
         'seaborn',
-        'abess==0.4.5'
     ]
 )
 
