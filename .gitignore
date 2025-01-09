@@ -119,4 +119,5 @@ ENV/
 data
 data2
 
-testdata/
+# test data
+testdata/*

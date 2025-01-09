@@ -321,7 +321,6 @@ class IGANN:
                 # Transform using the pre-fitted ColumnTransformer
                 X_transformed = self.column_transformer.transform(X)
 
-            # print(X_transformed)
             # Record feature names for reference
             self.feature_names = self.numerical_cols + list(
                 self.column_transformer.named_transformers_[
@@ -413,7 +412,6 @@ class IGANN:
 
         # Preprocess the feature matrix including scaling and one-hot encoding
         X = self._preprocess_feature_matrix(X)
-        # print(type(X))
         # convert y to tensor
         if type(y) == pd.Series or type(y) == pd.DataFrame:
             y = y.values
@@ -467,7 +465,6 @@ class IGANN:
         self.X_min = list(X.min(axis=0))
         self.X_max = list(X.max(axis=0))
         self.unique = [torch.unique(X[:, i]) for i in range(X.shape[1])]
-        # print(self.unique)
         self.hist = [torch.histogram(X[:, i]) for i in range(X.shape[1])]
 
         if self.verbose >= 1:
@@ -924,9 +921,9 @@ class IGANN:
         # helper function to plot numerical shape
         def _plot_numeric(ax_top, ax_bottom, shape_function):
             shape_function = _inverse_transform_x_if_needed(shape_function, scaler_dict)
-            print(shape_function["x"])
-            print(shape_function["y"])
-            print(shape_function["hist"]["edges"])
+            # print(shape_function["x"])
+            # print(shape_function["y"])
+            # print(shape_function["hist"]["edges"])
             sns.lineplot(
                 x=shape_function["x"],
                 y=shape_function["y"],
