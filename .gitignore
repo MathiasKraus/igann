@@ -118,3 +118,5 @@ ENV/
 #this project
 data
 data2
+
+testdata/
