@@ -664,16 +664,6 @@ class IGANN:
             new_best_symb = "*"
         else:
             new_best_symb = ""
-        # if eval:
-        #     test_pred = self.predict_raw(eval[0])
-        #     test_loss = self.criterion(test_pred, eval[1])
-        #     self.test_losses.append(test_loss)
-        #     print(
-        #         "{}{}: BoostRate: {:.3f}, Train loss: {:.5f} Val loss: {:.5f} Test loss: {:.5f}".format(
-        #             new_best_symb, counter, boost_rate, train_loss, val_loss, test_loss
-        #         )
-        #     )
-        # else:
         print(
             "{}{}: BoostRate: {:.3f}, Train loss: {:.5f} Val loss: {:.5f}".format(
                 new_best_symb, counter, boost_rate, train_loss, val_loss
