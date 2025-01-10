@@ -21,6 +21,7 @@ from sklearn.metrics import (
 
 warnings.simplefilter("once", UserWarning)
 
+
 class torch_Ridge:
     def __init__(self, alpha, device):
         self.coef_ = None
@@ -285,6 +286,7 @@ class IGANN:
         self.numerical_cols = list(set(X.columns) - set(self.categorical_cols))
 
         if len(self.categorical_cols) == 0:
+            print("not cat columns detected")
             self.feature_names = self.numerical_cols
             self.n_numerical_cols = len(self.numerical_cols)
             self.n_categorical_cols = 0
@@ -295,21 +297,24 @@ class IGANN:
             if fit_transform:
                 self.column_transformer = ColumnTransformer(
                     transformers=[
-                        #(
+                        # (
                         #    "num",
                         #    #StandardScaler(), #todo: add this and then reverse in plotting
                         #    self.numerical_cols,
-                        #),
+                        # ),
                         (
                             "cat",
                             OneHotEncoder(
-                                drop="first", handle_unknown="ignore", sparse_output=False
+                                drop="first",
+                                handle_unknown="ignore",
+                                sparse_output=False,
                             ),
                             self.categorical_cols,
                         ),
                     ],
                     remainder="passthrough",  # Keep other columns, if any
-                )
+                    verbose_feature_names_out=False,  # persevre column names after one hot encoding
+                ).set_output(transform="pandas")
                 # Fit and transform the data
                 X_transformed = self.column_transformer.fit_transform(X)
             else:
@@ -318,9 +323,9 @@ class IGANN:
 
             # Record feature names for reference
             self.feature_names = self.numerical_cols + list(
-                self.column_transformer.named_transformers_["cat"].get_feature_names_out(
-                    self.categorical_cols
-                )
+                self.column_transformer.named_transformers_[
+                    "cat"
+                ].get_feature_names_out(self.categorical_cols)
             )
 
             # Identify dropped features from OneHotEncoder
@@ -335,27 +340,29 @@ class IGANN:
             # Set the number of categorical and numerical columns based on OneHotEncoder output
             self.n_numerical_cols = len(self.numerical_cols)
             self.n_categorical_cols = len(
-                self.column_transformer.named_transformers_["cat"].get_feature_names_out(
-                    self.categorical_cols
-                )
+                self.column_transformer.named_transformers_[
+                    "cat"
+                ].get_feature_names_out(self.categorical_cols)
             )
 
-            # Convert to PyTorch tensor
-            X_tensor = torch.tensor(X_transformed, dtype=torch.float32)
+            # Reorder X to match feature_names list (we often need this for itterating through the features):
+            # safty check if all columns are present
+            missing = [
+                col for col in self.feature_names if col not in X_transformed.columns
+            ]
+            if missing:
+                raise ValueError(
+                    f"DataFrame is missing columns needed for ordering: {missing}"
+                )
 
-        # Log details
-        if self.verbose > 0:
-            print(f"Feature names are set to: {self.feature_names}")
-            print(f"Transformed shape: {X_tensor.shape}")
+            X_transformed = X_transformed[self.feature_names]
+
+            # Convert to PyTorch tensor
+            X_tensor = torch.tensor(X_transformed.to_numpy(), dtype=torch.float32)
 
         return X_tensor
 
-    def fit(
-        self,
-        X,
-        y,
-        val_set=None
-    ):
+    def fit(self, X, y, val_set=None):
         """
         This function fits the model on training data (X, y).
         Parameters:
@@ -405,7 +412,6 @@ class IGANN:
 
         # Preprocess the feature matrix including scaling and one-hot encoding
         X = self._preprocess_feature_matrix(X)
-
         # convert y to tensor
         if type(y) == pd.Series or type(y) == pd.DataFrame:
             y = y.values
@@ -495,7 +501,7 @@ class IGANN:
             val_loss_init,
         )
 
-        return 
+        return
 
     def get_params(self, deep=True):
         return {
@@ -543,9 +549,7 @@ class IGANN:
             }
             return metric_dict[metric](y, predictions)
 
-    def _run_optimization(
-        self, X, y, y_hat, X_val, y_val, y_hat_val, best_loss
-    ):
+    def _run_optimization(self, X, y, y_hat, X_val, y_val, y_hat_val, best_loss):
         """
         This function runs the optimization for ELMs with single features. This function should not be called from outside.
         Parameters:
@@ -658,9 +662,9 @@ class IGANN:
         else:
             new_best_symb = ""
         print(
-                "{}{}: BoostRate: {:.3f}, Train loss: {:.5f} Val loss: {:.5f}".format(
-                    new_best_symb, counter, boost_rate, train_loss, val_loss
-                )
+            "{}{}: BoostRate: {:.3f}, Train loss: {:.5f} Val loss: {:.5f}".format(
+                new_best_symb, counter, boost_rate, train_loss, val_loss
+            )
         )
 
     def predict_proba(self, X):
@@ -751,8 +755,10 @@ class IGANN:
     def get_shape_functions_as_dict(self, x_values=None):
         shape_functions = []
         for i, feat_name in enumerate(self.feature_names):
+            # set datatype to numerical if i is smaller than the number of numerical columns
             datatype = "numerical" if i < self.n_numerical_cols else "categorical"
             feat_values, pred = self._get_pred_of_i(i, x_values)
+
             if datatype == "numerical":
                 shape_functions.append(
                     {
@@ -761,7 +767,11 @@ class IGANN:
                         "x": feat_values.cpu().numpy(),
                         "y": pred.numpy(),
                         "avg_effect": float(torch.mean(torch.abs(pred))),
-                        "hist": self.hist[i],
+                        "hist": {
+                            # make this list for eaysier handling and plotting
+                            "counts": self.hist[i].hist.cpu().tolist(),
+                            "edges": self.hist[i].bin_edges.cpu().tolist(),
+                        },
                     }
                 )
             else:
@@ -773,7 +783,10 @@ class IGANN:
                         "x": [class_name],
                         "y": [pred.numpy()[1]],
                         "avg_effect": float(torch.mean(torch.abs(pred))),
-                        "hist": [[self.hist[i][0][-1]], [class_name]],
+                        "hist": {
+                            "counts": [self.hist[i][0][-1].cpu().tolist()],
+                            "classes": [class_name],
+                        },
                     }
                 )
 
@@ -787,11 +800,11 @@ class IGANN:
                 final_shape_functions[name]["avg_effect"] += shape_function[
                     "avg_effect"
                 ]
-                final_shape_functions[name]["hist"][0].append(
-                    shape_function["hist"][0][0]
+                final_shape_functions[name]["hist"]["counts"].extend(
+                    shape_function["hist"]["counts"]
                 )
-                final_shape_functions[name]["hist"][1].append(
-                    shape_function["hist"][1][0]
+                final_shape_functions[name]["hist"]["classes"].extend(
+                    shape_function["hist"]["classes"]
                 )
             # if the feature is numerical or categorical and not in the dict yet we just add it to the final shape functions
             else:
@@ -805,210 +818,183 @@ class IGANN:
                 final_shape_functions[name]["x"].append(class_name)
                 final_shape_functions[name]["y"].append(0)  # droped class effect is 0
 
-                final_shape_functions[name]["hist"][0].append(
-                    torch.tensor(
-                        num_rows - np.sum(final_shape_functions[name]["hist"][0])
-                    )
+                final_shape_functions[name]["hist"]["counts"].append(
+                    num_rows - np.sum(final_shape_functions[name]["hist"]["counts"])
                 )
-                final_shape_functions[name]["hist"][1].append(class_name)
+                final_shape_functions[name]["hist"]["classes"].append(class_name)
 
         return final_shape_functions
 
     def plot_single(
-        self, plot_by_list=None, show_n=5, scaler_dict=None, max_cat_plotted=4
+        self,
+        plot_by_list=None,
+        show_n=5,
+        scaler_dict=None,
+        max_cat_plotted=4,
+        max_plots_per_row=3,
     ):
-        """
-        This function plots the most important shape functions.
-        Parameters:
-        show_n: the number of shape functions that should be plotted.
-        scaler_dict: dictionary that maps every numerical feature to the respective (sklearn) scaler.
-                     scaler_dict[num_feature_name].inverse_transform(...) is called if scaler_dict is not None
-        """
-        shape_functions = self.get_shape_functions_as_dict()
-        #workaround, should be removed with new plotting
-        shape_functions = [shape_functions[d] for d in shape_functions.keys()]
-        if plot_by_list is None:
-            top_k = [
-                d
-                for d in sorted(
-                    shape_functions, reverse=True, key=lambda x: x["avg_effect"]
-                )
-            ][:show_n]
-            show_n = min(show_n, len(top_k))
-        else:
-            top_k = [
-                d
-                for d in sorted(
-                    shape_functions, reverse=True, key=lambda x: x["avg_effect"]
-                )
-            ]
-            show_n = len(plot_by_list)
+        """ """
+        # get shapefunctions
+        shape_functions_raw = self.get_shape_functions_as_dict()
 
-        plt.close(fig="Shape functions")
+        # get names/keys to extract
+        if plot_by_list is not None:
+            show_n = len(plot_by_list)
+            keys = plot_by_list
+        else:
+            keys = shape_functions_raw.keys()
+
+        # convert to list
+        shape_function_list = [shape_functions_raw[name] for name in keys]
+
+        # sort shape functions by effect strength
+        sorted_shape_functions = sorted(
+            shape_function_list, reverse=True, key=lambda x: x["avg_effect"]
+        )
+
+        # redeuce list of shape function to required size
+        top_k = sorted_shape_functions[:show_n]
+
+        # set up a grid
+        n_rows = int(np.ceil(len(top_k) / max_plots_per_row))
+        n_cols = min(len(top_k), max_plots_per_row)
+
+        # So the actual total rows = 2 * n_rows
+        total_rows = 2 * n_rows
+        total_cols = n_cols
+
+        # create height ratios for the grid
+        height_ratios = [4, 1] * n_rows  # shape is 4 histogram is 1
+
+        # set up figure
+        plt.close(fig="shape functions")
         fig, axs = plt.subplots(
-            2,
-            show_n,
-            figsize=(14, 4),
-            gridspec_kw={"height_ratios": [5, 1]},
+            total_rows,
+            total_cols,
+            figsize=(12, 4 * n_rows),  # tune as you like
+            gridspec_kw={
+                "height_ratios": height_ratios,
+                "hspace": 0.5,
+                "wspace": 0.4,
+            },
+            # gridspec_kw={"height_ratios": [5, 1]},
             num="Shape functions",
         )
-        plt.subplots_adjust(wspace=0.4)
 
-        i = 0
-        for d in top_k:
-            if plot_by_list is not None and d["name"] not in plot_by_list:
-                continue
-            if scaler_dict:
-                d["x"] = (
-                    scaler_dict[d["name"]]
-                    .inverse_transform(d["x"].reshape(-1, 1))
-                    .squeeze()
+        # Force axs to be 2D if it is not already
+        axs = axs.reshape(total_rows, total_cols)
+
+        def _inverse_transform_x_if_needed(shape_func, scaler_dict):
+            """
+            Inversely transform the shape function's x and y values and histogram edges
+            if:
+            1) shape_func is numeric, AND
+            2) shape_func['name'] is in scaler_dict
+            """
+            # If no scaler_dict is provided, just return as-is
+            if scaler_dict is None:
+                return shape_func
+
+            # if y is in scaler_dict, inverse-transform
+            if "y" in scaler_dict:
+                scaler_func = scaler_dict["y"]
+                shape_func["y"] = np.array(
+                    scale_func(np.array(shape_func["y"]).reshape(-1, 1))
                 )
-            if d["datatype"] == "categorical":
-                if show_n == 1:
-                    d["y"] = np.array(d["y"])
-                    d["x"] = np.array(d["x"])
-                    hist_items = [d["hist"][0][0].item()]
-                    hist_items.extend(his[0].item() for his in d["hist"][0][1:])
 
-                    idxs_to_plot = np.argpartition(
-                        np.abs(d["y"]),
-                        -(len(d["y"]) - 1)
-                        if len(d["y"]) <= (max_cat_plotted - 1)
-                        else -(max_cat_plotted - 1),
-                    )[-(max_cat_plotted - 1) :]
-                    y_to_plot = d["y"][idxs_to_plot]
-                    x_to_plot = d["x"][idxs_to_plot].tolist()
-                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
-                    if len(d["x"]) > max_cat_plotted - 1:
-                        # other classes:
-                        if "others" in x_to_plot:
-                            x_to_plot.append(
-                                "others_" + str(np.random.randint(0, 999))
-                            )  # others or else seem like plausible variable names
-                        else:
-                            x_to_plot.append("others")
-                        y_to_plot = np.append(y_to_plot.flatten(), [[0]]).reshape(
-                            max_cat_plotted,
-                        )
-                        hist_items_to_plot.append(
-                            np.sum(
-                                [
-                                    hist_items[i]
-                                    for i in range(len(hist_items))
-                                    if i not in idxs_to_plot
-                                ]
-                            )
-                        )
+            # Check if in scaler_dict
+            if shape_func["name"] in scaler_dict:
+                scaler_func = scaler_dict[shape_func["name"]]
 
-                    axs[0].bar(
-                        x=x_to_plot, height=y_to_plot, width=0.5, color="darkblue"
-                    )
-                    axs[1].bar(
-                        x=x_to_plot,
-                        height=hist_items_to_plot,
-                        width=1,
-                        color="darkblue",
-                    )
+                # Inverse-transform x-values
+                x_arr = np.array(shape_func["x"]).reshape(-1, 1)
+                x_inv = scaler_func(x_arr)
+                shape_func["x"] = np.array(x_inv).ravel()
 
-                    axs[0].set_title(
-                        "{}:\n{:.2f}%".format(
-                            self._split_long_titles(d["name"]), d["avg_effect"]
-                        )
-                    )
-                    axs[0].grid()
-                else:
-                    d["y"] = np.array(d["y"])
-                    d["x"] = np.array(d["x"])
-                    hist_items = [d["hist"][0][0].item()]
-                    hist_items.extend(his[0].item() for his in d["hist"][0][1:])
+                # Inverse-transform histogram edges
+                edges_arr = np.array(shape_func["hist"]["edges"]).reshape(-1, 1)
+                edges_inv = scaler_func(edges_arr)
+                shape_func["hist"]["edges"] = np.array(edges_inv).ravel()
 
-                    idxs_to_plot = np.argpartition(
-                        np.abs(d["y"]),
-                        -(len(d["y"]) - 1)
-                        if len(d["y"]) <= (max_cat_plotted - 1)
-                        else -(max_cat_plotted - 1),
-                    )[-(max_cat_plotted - 1) :]
-                    y_to_plot = d["y"][idxs_to_plot]
-                    x_to_plot = d["x"][idxs_to_plot].tolist()
-                    hist_items_to_plot = [hist_items[i] for i in idxs_to_plot]
-                    if len(d["x"]) > max_cat_plotted - 1:
-                        # other classes:
-                        if "others" in x_to_plot:
-                            x_to_plot.append(
-                                "others_" + str(np.random.randint(0, 999))
-                            )  # others or else seem like plausible variable names
-                        else:
-                            x_to_plot.append("others")
-                        y_to_plot = np.append(y_to_plot.flatten(), [[0]]).reshape(
-                            max_cat_plotted,
-                        )
-                        hist_items_to_plot.append(
-                            np.sum(
-                                [
-                                    hist_items[i]
-                                    for i in range(len(hist_items))
-                                    if i not in idxs_to_plot
-                                ]
-                            )
-                        )
+            return shape_func
 
-                    axs[0][i].bar(
-                        x=x_to_plot, height=y_to_plot, width=0.5, color="darkblue"
-                    )
-                    axs[1][i].bar(
-                        x=x_to_plot,
-                        height=hist_items_to_plot,
-                        width=1,
-                        color="darkblue",
-                    )
+        # helper function to plot numerical shape
+        def _plot_numeric(ax_top, ax_bottom, shape_function):
+            shape_function = _inverse_transform_x_if_needed(shape_function, scaler_dict)
+            # print(shape_function["x"])
+            # print(shape_function["y"])
+            # print(shape_function["hist"]["edges"])
+            sns.lineplot(
+                x=shape_function["x"],
+                y=shape_function["y"],
+                ax=ax_top,
+                linewidth=3,
+                color="darkblue",
+            )
+            ax_top.axhline(y=0, color="grey", linestyle="--")
+            ax_bottom.bar(
+                shape_function["hist"]["edges"][:-1],
+                shape_function["hist"]["counts"],
+                width=1,
+                color="darkblue",
+            )
+            ax_bottom.get_xaxis().set_visible(False)
 
-                    axs[0][i].set_title(
-                        "{}:\n{:.2f}%".format(
-                            self._split_long_titles(d["name"]), d["avg_effect"]
-                        )
-                    )
-                    axs[0][i].grid()
+        # helper function to plot categorical shape
+        def _plot_categorical(ax_top, ax_bottom, shape_function):
+            shape_function = _inverse_transform_x_if_needed(shape_function, scaler_dict)
+            ax_top.bar(
+                x=shape_function["x"],
+                height=shape_function["y"],
+                width=1,
+                color="darkblue",
+            )
+            ax_top.axhline(y=0, color="grey", linestyle="--")
 
+            # set xticks and labels
+            ax_top.set_xticks(np.arange(len(shape_function["x"])))
+            ax_top.set_xticklabels(shape_function["x"], rotation=70)
+
+            ax_bottom.bar(
+                x=shape_function["hist"]["classes"],
+                height=shape_function["hist"]["counts"],
+                width=1,
+                color="darkblue",
+            )
+            ax_bottom.get_xaxis().set_visible(False)
+
+        # main loop
+        # print(f"n_rows: {n_rows}, n_cols: {n_cols}")
+        for i, shape_function in enumerate(top_k):
+            # determine postion
+            row = i // n_cols
+            col = i % n_cols
+
+            # print(f"i:{i}, row: {row}, col: {col}")
+
+            # get axes
+            ax_top = axs[2 * row, col]
+            ax_bottom = axs[2 * row + 1, col]
+
+            if shape_function["datatype"] == "numerical":
+                _plot_numeric(ax_top, ax_bottom, shape_function)
+                # Align x-axes for numeric only
+                ax_bottom.set_xlim(ax_top.get_xlim())
             else:
-                if show_n == 1:
-                    g = sns.lineplot(
-                        x=d["x"], y=d["y"], ax=axs[0], linewidth=2, color="darkblue"
-                    )
-                    g.axhline(y=0, color="grey", linestyle="--")
-                    axs[1].bar(
-                        d["hist"][1][:-1], d["hist"][0], width=1, color="darkblue"
-                    )
-                    axs[0].set_title(
-                        "{}:\n{:.2f}%".format(
-                            self._split_long_titles(d["name"]), d["avg_effect"]
-                        )
-                    )
-                    axs[0].grid()
-                else:
-                    g = sns.lineplot(
-                        x=d["x"], y=d["y"], ax=axs[0][i], linewidth=2, color="darkblue"
-                    )
-                    g.axhline(y=0, color="grey", linestyle="--")
-                    axs[1][i].bar(
-                        d["hist"][1][:-1], d["hist"][0], width=1, color="darkblue"
-                    )
-                    axs[0][i].set_title(
-                        "{}:\n{:.2f}%".format(
-                            self._split_long_titles(d["name"]), d["avg_effect"]
-                        )
-                    )
-                    axs[0][i].grid()
+                _plot_categorical(ax_top, ax_bottom, shape_function)
 
-            i += 1
+            # add a title
+            ax_top.set_title(
+                f"{shape_function['name']}: {shape_function['avg_effect']:.2f}"
+            )
 
-        if show_n == 1:
-            axs[1].get_xaxis().set_visible(False)
-            axs[1].get_yaxis().set_visible(False)
-        else:
-            for i in range(show_n):
-                axs[1][i].get_xaxis().set_visible(False)
-                axs[1][i].get_yaxis().set_visible(False)
+        # remove empty axes
+        for i in range(show_n, n_cols * n_rows):
+            row = i // n_cols
+            col = i % n_cols
+            axs[row * 2, col].axis("off")
+            axs[row * 2 + 1, col].axis("off")
+
         plt.show()
 
     def plot_learning(self):
@@ -1078,7 +1064,7 @@ if __name__ == "__main__":
     # m = IGANN_Bagged(
     #     task="regression", n_estimators=100, verbose=0, n_bags=5
     # )  # , device='cuda'
-    m = IGANN(task='regression', n_estimators=100, verbose=0)
+    m = IGANN(task="regression", n_estimators=100, verbose=0)
     m.fit(pd.DataFrame(X_train), y_train)
     end = time.time()
     print(end - start)
