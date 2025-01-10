@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='igann',
-    version='0.1.4',
+    version='0.1.5',
     author='Mathias Kraus',
     author_email='mathias.sebastian.kraus@gmail.com',
     description='Implementation of Interpretable Generalized Additive Neural Networks',
