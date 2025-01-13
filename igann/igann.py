@@ -290,7 +290,7 @@ class IGANN:
             self.feature_names = self.numerical_cols
             self.n_numerical_cols = len(self.numerical_cols)
             self.n_categorical_cols = 0
-            X_tensor = torch.tensor(X.values, dtype=torch.float32)
+            X_transformed = X
 
         else:
             # Define a ColumnTransformer
@@ -345,22 +345,21 @@ class IGANN:
                 ].get_feature_names_out(self.categorical_cols)
             )
 
-            # Reorder X to match feature_names list (we often need this for itterating through the features):
-            # safty check if all columns are present
-            missing = [
-                col for col in self.feature_names if col not in X_transformed.columns
-            ]
-            if missing:
-                raise ValueError(
-                    f"DataFrame is missing columns needed for ordering: {missing}"
-                )
+        # Reorder X to match feature_names list (we often need this for itterating through the features):
+        # safty check if all columns are present
+        missing = [
+            col for col in self.feature_names if col not in X_transformed.columns
+        ]
+        if missing:
+            raise ValueError(
+                f"DataFrame is missing columns needed for ordering: {missing}"
+            )
 
-            X_transformed = X_transformed[self.feature_names]
+        X_final = X_transformed[self.feature_names]
 
-            # Convert to PyTorch tensor
-            X_tensor = torch.tensor(X_transformed.to_numpy(), dtype=torch.float32)
-
-        return X_tensor
+        # Convert to PyTorch tensor
+        X_final = torch.tensor(X_final.to_numpy(), dtype=torch.float32)
+        return X_final
 
     def fit(self, X, y, val_set=None):
         """
