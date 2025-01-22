@@ -286,7 +286,8 @@ class IGANN:
         self.numerical_cols = list(set(X.columns) - set(self.categorical_cols))
 
         if len(self.categorical_cols) == 0:
-            print("not cat columns detected")
+            if self.verbose > 0:
+                print("no categorical columns detected")
             self.feature_names = self.numerical_cols
             self.n_numerical_cols = len(self.numerical_cols)
             self.n_categorical_cols = 0
