@@ -83,7 +83,7 @@ class IGANN_interactive(IGANN):
                     y_hat_val = torch.tensor(
                         self.predict_raw(self.raw_X_val), dtype=torch.float32
                     )
-            #### Start - addtional code for IGANN_interactive #####
+            #### End - addtional code for IGANN_interactive #####
             hessian_train_sqrt = self._loss_sqrt_hessian(y, y_hat)
             y_tilde = torch.sqrt(torch.tensor(0.5).to(self.device)) * self._get_y_tilde(
                 y, y_hat
@@ -165,6 +165,7 @@ class IGANN_interactive(IGANN):
                 print(f"Cutting at {best_iter}")
             self.regressors = self.regressors[:best_iter]
             self.boosting_rates = self.boosting_rates[:best_iter]
+
         # if we use the GAMwrapper, we compress the ELMs to a GAM model in the end of the optimization
         if self.GAMwrapper == True:
             self.compress_to_GAM()
@@ -180,27 +181,44 @@ class IGANN_interactive(IGANN):
         #### Start - addtional code for IGANN_interactive #####
         # if we have a GAM wrapper, we use the GAM model for prediction
         if self.GAMwrapper == True and self.GAM is not None:
-            # Its not really correct to name this nn, but since pred_nn i further processed this makes sensense
-            pred_nn = self.GAM.predict_raw(X)
-            pred = pred_nn + (self.linear_model.intercept_)
-        #### End - addtional code for IGANN_interactive #####
+            # As the GAM uses shape function that are not scaled or one-hot encoded we will >>not<< preprocess the data.
+            pred_shape = self.GAM.predict_raw(X)
+            # pred_shape = pred_ + (self.linear_model.intercept_)
         else:
+            # if we do not have a GAM wrapper we use the linear shape function for init prediction
+            pred_shape = (
+                self.linear_model.coef_.astype(np.float32) @ X.transpose()
+            ).squeeze()
+        # add the intercept to the prediction
+        pred_shape += self.linear_model.intercept_
+
+        # if we have regressors we use them to further imporve the prediction
+        if len(self.regressors) > 0:
             X = self._preprocess_feature_matrix(X, fit_transform=False).to(self.device)
 
             pred_nn = torch.zeros(len(X), dtype=torch.float32).to(self.device)
             for boost_rate, regressor in zip(self.boosting_rates, self.regressors):
                 pred_nn += boost_rate * regressor.predict(X).squeeze()
             pred_nn = pred_nn.detach().cpu().numpy()
+            # convert back to numpy for further calculations
             X = X.detach().cpu().numpy()
-            pred = (
-                pred_nn
-                + (self.linear_model.coef_.astype(np.float32) @ X.transpose()).squeeze()
-                + self.linear_model.intercept_
-            )
+
+        # add pred_nn and pred_shape to get the final prediction if they exits.
+        pred_combined = locals().get("pred_shape", 0) + locals().get("pred_nn", 0)
+
+        pred = (
+            pred_combined
+            # + pred_nn
+            # + (self.linear_model.coef_.astype(np.float32) @ X.transpose()).squeeze()
+            # + self.linear_model.intercept_
+        )
+        #### End - addtional code for IGANN_interactive #####
 
         return pred
 
     def _get_pred_of_i(self, i, x_values=None):
+        print("get_pred_of_i of igann_interactive")
+        feat_name = self.feature_names[i]
         if x_values == None:
             feat_values = self.unique[i]
         else:
@@ -209,7 +227,9 @@ class IGANN_interactive(IGANN):
         #### Start - addtional code for IGANN_interactive #####
         # if there is a GAMwarapper and its feature dict is set up we use this for a prediction
         if self.GAMwrapper and self.GAM and self.GAM.feature_dict:
-            pred = self.GAM.predict_single(i, feat_values)
+            raw_feat_values = self.scaler_dict_[feat_name](feat_values.cpu().numpy())
+            print("using predict_single of GAM")
+            pred = self.GAM.predict_single(i, raw_feat_values)
             pred = torch.from_numpy(np.array(pred))
         #### End - addtional code for IGANN_interactive #####
 
@@ -220,6 +240,7 @@ class IGANN_interactive(IGANN):
                 pred = self.linear_model.coef_[i] * feat_values
 
         feat_values = feat_values.to(self.device)
+        print(f"Regressors: {len(self.regressors)}")
         for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
             pred += (
                 boost_rate
@@ -372,7 +393,10 @@ class GAMmodel:
         # print(len(y))
         return y
 
-    def predict_raw(self, X):
+    def predict_raw(
+        self,
+        X,
+    ):
         """
         Predict raw values using scaled numerical features and original (raw) categorical features.
         """
@@ -381,16 +405,30 @@ class GAMmodel:
             y[col] = self.predict_single(col, X[col])
 
         y = pd.DataFrame(y)
-        y_predict_raw = np.array(y.sum(axis=1))
+        y_predict_raw = (
+            np.array(y.sum(axis=1)) + self.base_model.linear_model.intercept_
+        )
 
         return y_predict_raw
 
-    def predict_proba(self, df):
-        y_predict_raw = self.predict_raw(df)
-        y_predict_proba = 1 / (1 + np.exp(-y_predict_raw))
-        return y_predict_proba
+    # def predict_sample(self, X_sample):
+    #     """
+    #     Predict raw values (log odd or regression unit) for a given sample for each feature individual .
+    #     """
+    #     y = []
+    #         y[col] = self.predict_single(col, X[col])
 
-    def predict(self, df, threshold=0.5):
-        y_predict_proba = self.predict_proba(df)
-        y_predict = np.where(y_predict_proba > threshold, 1, 0)
-        return y_predict
+    #     y = pd.DataFrame(y)
+    #     y_predict_raw = np.array(y.sum(axis=1))
+
+    #     return y_predict_raw
+
+    # def predict_proba(self, df):
+    #     y_predict_raw = self.predict_raw(df)
+    #     y_predict_proba = 1 / (1 + np.exp(-y_predict_raw))
+    #     return y_predict_proba
+
+    # def predict(self, df, threshold=0.5):
+    #     y_predict_proba = self.predict_proba(df)
+    #     y_predict = np.where(y_predict_proba > threshold, 1, 0)
+    #     return y_predict
