@@ -402,7 +402,29 @@ class IGANN:
                 return x * scale + mean
 
             self.scaler_dict_[col_name] = inverse_transform_fn
-        print(self.scaler_dict_)
+        # print(self.scaler_dict_)
+
+    def scale_y(self, y):
+        """
+        This function scales the target variable y. It is used to ensure that the optimization
+        works well. The scaling is done with a StandardScaler.
+        """
+        if self.task == "classification":
+            return y
+        else:
+            self.y_scaler = StandardScaler()
+            y = self.y_scaler.fit_transform(y.reshape(-1, 1)).flatten()
+            return y
+
+    def rescale_y(self, y):
+        """
+        This function rescales the target variable y back to the original scale.
+        """
+        if self.task == "classification":
+            return y
+        else:
+            y = self.y_scaler.inverse_transform(y.reshape(-1, 1)).flatten()
+            return y
 
     def fit(self, X, y, val_set=None):
         """
@@ -454,6 +476,10 @@ class IGANN:
 
         # Preprocess the feature matrix including scaling and one-hot encoding
         X = self._preprocess_feature_matrix(X)
+
+        # apply scaling to y (is not done for classification)
+        y = self.scale_y(y)
+
         # convert y to tensor
         if type(y) == pd.Series or type(y) == pd.DataFrame:
             y = y.values
@@ -806,13 +832,17 @@ class IGANN:
                     {
                         "name": feat_name,
                         "datatype": datatype,
+                        # we save this unscaled due to better interpretability
                         "x": self.scaler_dict_[feat_name](feat_values.cpu().numpy()),
                         "y": pred.numpy(),
                         "avg_effect": float(torch.mean(torch.abs(pred))),
                         "hist": {
                             # make this list for eaysier handling and plotting
                             "counts": self.hist[i].hist.cpu().tolist(),
-                            "edges": self.hist[i].bin_edges.cpu().tolist(),
+                            # we save this unscaled due to better interpretability
+                            "edges": self.scaler_dict_[feat_name](
+                                self.hist[i].bin_edges.cpu().numpy()
+                            ),
                         },
                     }
                 )
