@@ -217,7 +217,7 @@ class IGANN_interactive(IGANN):
         return pred
 
     def _get_pred_of_i(self, i, x_values=None):
-        print("get_pred_of_i of igann_interactive")
+        # print("get_pred_of_i of igann_interactive")
         feat_name = self.feature_names[i]
         if x_values == None:
             feat_values = self.unique[i]
@@ -228,7 +228,7 @@ class IGANN_interactive(IGANN):
         # if there is a GAMwarapper and its feature dict is set up we use this for a prediction
         if self.GAMwrapper and self.GAM and self.GAM.feature_dict:
             raw_feat_values = self.scaler_dict_[feat_name](feat_values.cpu().numpy())
-            print("using predict_single of GAM")
+            # print("using predict_single of GAM")
             pred = self.GAM.predict_single(i, raw_feat_values)
             pred = torch.from_numpy(np.array(pred))
         #### End - addtional code for IGANN_interactive #####
@@ -240,7 +240,7 @@ class IGANN_interactive(IGANN):
                 pred = self.linear_model.coef_[i] * feat_values
 
         feat_values = feat_values.to(self.device)
-        print(f"Regressors: {len(self.regressors)}")
+        # print(f"Regressors: {len(self.regressors)}")
         for regressor, boost_rate in zip(self.regressors, self.boosting_rates):
             pred += (
                 boost_rate
@@ -263,6 +263,11 @@ class IGANN_interactive(IGANN):
         self.boosting_rates = []
 
     #### End - addtional code for IGANN_interactive #####
+
+    def interact(self):
+        from igann import run_igann_interactive
+
+        run_igann_interactive(self)
 
 
 class GAMmodel:
@@ -410,25 +415,3 @@ class GAMmodel:
         )
 
         return y_predict_raw
-
-    # def predict_sample(self, X_sample):
-    #     """
-    #     Predict raw values (log odd or regression unit) for a given sample for each feature individual .
-    #     """
-    #     y = []
-    #         y[col] = self.predict_single(col, X[col])
-
-    #     y = pd.DataFrame(y)
-    #     y_predict_raw = np.array(y.sum(axis=1))
-
-    #     return y_predict_raw
-
-    # def predict_proba(self, df):
-    #     y_predict_raw = self.predict_raw(df)
-    #     y_predict_proba = 1 / (1 + np.exp(-y_predict_raw))
-    #     return y_predict_proba
-
-    # def predict(self, df, threshold=0.5):
-    #     y_predict_proba = self.predict_proba(df)
-    #     y_predict = np.where(y_predict_proba > threshold, 1, 0)
-    #     return y_predict
