@@ -15,8 +15,8 @@ from sklearn.metrics import f1_score, mean_squared_error
 from sklearn.model_selection import train_test_split, KFold
 
 
-from igann import IGANN
-from igann import IGANN_sklearn
+from ./igann import IGANN
+from ./igann import IGANN_sklearn
 
 
 class TestSklearnIGANN(unittest.TestCase):
