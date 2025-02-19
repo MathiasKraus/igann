@@ -1,3 +1,11 @@
+# to run this file you need to have the following files in the same directory:
+# - test_data/bikes.csv
+# install igann with:
+# pip install git+https://github.com/MathiasKraus/igann.git@GAM_wrapper
+# install i2dgraph with:
+# pip install i2dgraph
+
+
 # %%
 # import libs
 import igann
@@ -20,51 +28,42 @@ import os
 from sklearn.datasets import fetch_california_housing
 
 # Load the dataset
-df = pd.read_csv("test_data/mimic4_mean_100_extended_filtered.csv")
+df = pd.read_csv("test_data/bikes.csv")
 
+df.dropna(subset=["cnt"], inplace=True)
+
+print(df.info())
+
+# %%
+# set correct nan
+df.replace("-", np.nan, inplace=True)
+
+# drop examples with nans
+df.dropna(inplace=True)
 
 # set X and y
-y = pd.DataFrame(df["mortality"])
+y = pd.DataFrame(df["cnt"])
+
 
 feature_to_drop = [
-    "mortality",
-    "LOS",
-    "Eth",
-    # "Sex",
-    # "Age",
-    "Weight+100%mean",
-    "Height+100%mean",
-    "Bmi+100%mean",
-    # "Temp+100%mean",
-    # "RR+100%mean",
-    # "HR+100%mean",
-    # "GLU+100%mean",
-    "SBP+100%mean",
-    "DBP+100%mean",
-    # "MBP+100%mean",
-    # "Ph+100%mean",
-    # "GCST+100%mean",
-    # "PaO2+100%mean",
-    # "Kreatinin+100%mean",
-    # FiO2+100%mean",
-    # "Kalium+100%mean",
-    "Natrium+100%mean",
-    "Leukocyten+100%mean",
-    "Thrombocyten+100%mean",
-    "Bilirubin+100%mean",
-    # "HCO3+100%mean",
-    "Hb+100%mean",
-    "Quick+100%mean",
-    "ALAT+100%mean",
-    "ASAT+100%mean",
-    # PaCO2+100%mean",
-    "Albumin+100%mean",
-    "AnionGAP+100%mean",
-    "Lactate+100%mean",
-    # "Urea+100%mean",
+    "dteday",
+    "season",
+    # "yr",
+    # "mnth",
+    # "hr",
+    # "holiday",
+    # "weathersit",
+    "temp",
+    # "atemp",
+    # "hum",
+    # "windspeed",
+    "cnt",
 ]
+
 X = df.drop(columns=feature_to_drop, inplace=False)
 print(X.shape)
+
+
 print(X.describe())
 print(X.info())
 # %%
@@ -73,13 +72,20 @@ from feature_engine.outliers import Winsorizer
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 
 
 # define feature types for preprocessing (also make sure to use the correct type in the datagframe)
 # define cat
 
 # this dataset has not cats
-cat_features = ["Sex"]
+cat_features = [
+    "yr",
+    "mnth",
+    "hr",
+    "holiday",
+    "weathersit",
+]
 
 # define numeric features
 num_features = [feature for feature in X.columns if feature not in cat_features]
@@ -92,14 +98,14 @@ num_Transformer = Pipeline(
             "num_imputer",
             SimpleImputer(strategy="mean"),
         ),
-        (
-            "winsorizer",
-            Winsorizer(
-                capping_method="gaussian",  # or "quantiles"
-                tail="both",  # "left", "right", or "both"
-                fold=4,  # stdevs away if "gaussian", or quantile distance if "quantiles"
-            ),
-        ),
+        # (
+        #     "winsorizer",
+        #     Winsorizer(
+        #         capping_method="gaussian",  # or "quantiles"
+        #         tail="both",  # "left", "right", or "both"
+        #         fold=4,  # stdevs away if "gaussian", or quantile distance if "quantiles"
+        #     ),
+        # ),
     ]
 )
 
@@ -119,24 +125,39 @@ column_Transformer = ColumnTransformer(
     transformers=[
         ("num", num_Transformer, num_features),
         ("cat", cat_Transformer, cat_features),
-    ]
+    ],
+    verbose_feature_names_out=False,
 ).set_output(transform="pandas")
 
 # transform X
 X = column_Transformer.fit_transform(X)
+X = X.astype(
+    {
+        "yr": "object",
+        "mnth": "object",
+        "hr": "object",
+        "holiday": "object",
+        "weathersit": "object",
+    }
+)
+
 print(X.info())
 X.describe()
+
+# y_scaler = StandardScaler()
+# y_unscaled = y.copy()
+# y = y_scaler.fit_transform(y)
 
 # %%
 # train test split
 from sklearn.model_selection import train_test_split
 
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
+    X, y, test_size=0.2, random_state=42
 )
 
 _, X_train_reduced, _, y_train_reduced = train_test_split(
-    X_train, y_train, test_size=2000, random_state=42, stratify=y_train
+    X_train, y_train, test_size=2000, random_state=42
 )
 
 
@@ -147,7 +168,7 @@ _, X_train_reduced, _, y_train_reduced = train_test_split(
 # first normal igann
 from igann import IGANN
 
-igann = IGANN(task="classification", n_estimators=1000, verbose=0)  # 1,
+igann = IGANN(task="regression", n_estimators=1000, verbose=1, scale_y=True)  # 1,
 
 igann.fit(X_train, y_train)
 
@@ -155,35 +176,43 @@ igann.fit(X_train, y_train)
 from igann import IGANN_interactive
 
 igann_i = IGANN_interactive(
-    task="classification",
+    task="regression",
     n_estimators=1000,
     regressor_limit=1000,  # set this to n_estimator otherwise wired things can happen
     verbose=0,  # 1,
     GAM_detail=100,  # number of points used to save and represent the shapefunction
+    scale_y=True,
 )
-igann_i.fit(X_train_reduced, y_train_reduced)
+igann_i.fit(X_train, y_train)
 
-igann.plot_single(show_n=12)
+# igann.plot_single(show_n=8)
 
-igann_i.interact()
+# igann_i.interact()
 
 # %%
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, root_mean_squared_error
 
 
 def test_model(model, X, y):
-    y_pred_proba = model.predict_proba(X)[:, 1]
-    auc = roc_auc_score(y, y_pred_proba)
-    return auc
+    y_pred = model.predict(X)
+    rsme = root_mean_squared_error(y, y_pred)
+    return rsme
 
 
-print(f"igann: AUC = {test_model(igann, X_test, y_test)}")
-print(f"igann_interactive: AUC = {test_model(igann_i, X_test, y_test)}")
+print(f"igann: rsme = {test_model(igann, X_test, y_test)}")
+print(f"igann_interactive: rsme = {test_model(igann_i, X_test, y_test)}")
+
+y_test_unscaled = y_scaler.inverse_transform(y_test)
+y_pred = igann.predict(X_test)
+# y_pred_unscaled = y_scaler.inverse_transform(y_pred.reshape(-1, 1))
+
+# print(f"rsme: {root_mean_squared_error(y_test_unscaled, y_pred_unscaled)}")
 
 # %%
 import matplotlib.pyplot as plt
 import json
 
+# %%
 
 # def print_models_from_timestemps(
 #     timestemps, features=None, directory="saved_feature_dicts"
