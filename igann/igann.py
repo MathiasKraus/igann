@@ -187,6 +187,7 @@ class IGANN:
         device="cpu",
         random_state=1,
         verbose=0,
+        scale_y=False,
     ):
         """
         Initializes the model. Input parameters:
@@ -218,6 +219,7 @@ class IGANN:
         self.verbose = verbose
         self.boost_rate = boost_rate
         self.target_remapped_flag = False
+        self.scale_target = scale_y
         """Is set to true during the fit method if the target (y) is remapped to -1 and 1 instead of 0 and 1."""
 
     def _clip_p(self, p):
@@ -404,26 +406,51 @@ class IGANN:
             self.scaler_dict_[col_name] = inverse_transform_fn
         # print(self.scaler_dict_)
 
-    def scale_y(self, y):
+    def scale_y(self, y, fit_transform=True):
         """
         This function scales the target variable y. It is used to ensure that the optimization
         works well. The scaling is done with a StandardScaler.
         """
-        if self.task == "classification":
-            return y
+
+        # Convert y to a numpy array if it is a scalar, list, or any other type
+        if isinstance(y, (float, int)):
+            y = np.array([y])  # Convert scalar to 1D numpy array
         else:
-            self.y_scaler = StandardScaler()
-            y = self.y_scaler.fit_transform(y.reshape(-1, 1)).flatten()
+            y = np.array(
+                y
+            )  # Convert other types (list, series, dataframe, etc.) to numpy array
+
+        if self.task == "regression" and self.scale_target:
+            # Scale
+            if fit_transform:
+                self.y_scaler = StandardScaler()
+                y_scaled = self.y_scaler.fit_transform(y.reshape(-1, 1)).flatten()
+            else:
+                y_scaled = self.y_scaler.transform(y.reshape(-1, 1)).flatten()
+
+            return y_scaled
+
+        # no scaling
+        else:
             return y
 
     def rescale_y(self, y):
         """
         This function rescales the target variable y back to the original scale.
         """
-        if self.task == "classification":
+
+        # Convert y to a numpy array if it is a scalar, list, or any other type
+        if isinstance(y, (float, int)):
+            y = np.array([y])  # Convert scalar to 1D numpy array
+        else:
+            y = np.array(
+                y
+            )  # Convert other types (list, series, dataframe, etc.) to numpy array
+
+        if self.task == "regression" and self.scale_target:
+            y = self.y_scaler.inverse_transform(y.reshape(-1, 1)).flatten()
             return y
         else:
-            y = self.y_scaler.inverse_transform(y.reshape(-1, 1)).flatten()
             return y
 
     def fit(self, X, y, val_set=None):
@@ -762,7 +789,9 @@ class IGANN:
         Note: for a classification task, it returns the binary target values in a 1-d np.array, it can hold -1 and 1.
         """
         if self.task == "regression":
-            return self.predict_raw(X)
+            y = self.predict_raw(X)
+            y = self.rescale_y(y)
+            return y
         else:
             pred_raw = self.predict_raw(X)
             # detach and numpy pred_raw
@@ -804,6 +833,7 @@ class IGANN:
         return "\n".join(l[p : p + 22] for p in range(0, len(l), 22))
 
     def _get_pred_of_i(self, i, x_values=None):
+        # the big problem is that this works only once and not anymore when we rapped it into a GAM once!
         if x_values == None:
             feat_values = self.unique[i]
         else:
@@ -834,7 +864,7 @@ class IGANN:
                         "datatype": datatype,
                         # we save this unscaled due to better interpretability
                         "x": self.scaler_dict_[feat_name](feat_values.cpu().numpy()),
-                        "y": pred.numpy(),
+                        "y": self.rescale_y(pred.numpy()),
                         "avg_effect": float(torch.mean(torch.abs(pred))),
                         "hist": {
                             # make this list for eaysier handling and plotting
@@ -853,7 +883,7 @@ class IGANN:
                         "name": feat_name.rsplit("_", 1)[0],
                         "datatype": datatype,
                         "x": [class_name],
-                        "y": [pred.numpy()[1]],
+                        "y": self.rescale_y(pred.numpy()[1]),
                         "avg_effect": float(torch.mean(torch.abs(pred))),
                         "hist": {
                             "counts": [self.hist[i][0][-1].cpu().tolist()],
@@ -868,7 +898,9 @@ class IGANN:
             # if the feature is cateogrical we need to add the dropped class to the existing shape function
             if name in final_shape_functions.keys():
                 final_shape_functions[name]["x"].extend(shape_function["x"])
-                final_shape_functions[name]["y"].extend(shape_function["y"])
+                final_shape_functions[name]["y"] = np.append(
+                    final_shape_functions[name]["y"], shape_function["y"]
+                )
                 final_shape_functions[name]["avg_effect"] += shape_function[
                     "avg_effect"
                 ]
@@ -888,7 +920,9 @@ class IGANN:
             if final_shape_functions[name]["datatype"] == "categorical":
                 class_name = str(self.dropped_features[name])
                 final_shape_functions[name]["x"].append(class_name)
-                final_shape_functions[name]["y"].append(0)  # droped class effect is 0
+                final_shape_functions[name]["y"] = np.append(
+                    final_shape_functions[name]["y"], np.array([0])
+                )
 
                 final_shape_functions[name]["hist"]["counts"].append(
                     num_rows - np.sum(final_shape_functions[name]["hist"]["counts"])

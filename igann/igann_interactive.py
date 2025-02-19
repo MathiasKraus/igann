@@ -262,12 +262,29 @@ class IGANN_interactive(IGANN):
         self.regressors = []
         self.boosting_rates = []
 
-    #### End - addtional code for IGANN_interactive #####
-
     def interact(self):
         from igann import run_igann_interactive
 
         run_igann_interactive(self)
+
+    def get_feature_wise_pred(self, X):
+        if self.GAM is not None:
+            y = pd.DataFrame(self.GAM.get_feature_wise_pred(X))
+        else:
+            print(
+                "fist the model should be compressed to a GAM. Try to call 'compress_to_GAM'-function."
+            )
+        return y
+
+    def get_feature_wise_pred_as_dict(self, X):
+        """
+        this does not work jet ...
+        """
+        # y = self.get_feature_wise_pred(X)
+        # for
+        # for featue in y.Columns():
+
+    #### End - addtional code for IGANN_interactive #####
 
 
 class GAMmodel:
@@ -410,8 +427,22 @@ class GAMmodel:
             y[col] = self.predict_single(col, X[col])
 
         y = pd.DataFrame(y)
-        y_predict_raw = (
-            np.array(y.sum(axis=1)) + self.base_model.linear_model.intercept_
-        )
+        print(y)
+        # = np.array(y.sum(axis=1))
+        y_scaled = self.base_model.scale_y(np.array(y.sum(axis=1)), fit_transform=False)
+
+        print(y_scaled)
+        print(self.base_model.linear_model.intercept_)
+        y_predict_raw = y_scaled + self.base_model.linear_model.intercept_
 
         return y_predict_raw
+
+    def get_feature_wise_pred(self, X):
+        """
+        This function returns the prediction of the GAM model for each feature.
+        """
+        y = {}
+        for col in X.columns:
+            y[col] = self.predict_single(col, X[col])
+
+        return y
