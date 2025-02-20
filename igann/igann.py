@@ -293,8 +293,8 @@ class IGANN:
 
         # Build a list of (name, transformer, columns)
         transformers = []
-        if len(self.numerical_cols) > 0:
-            transformers.append(("num", StandardScaler(), self.numerical_cols))
+        # if len(self.numerical_cols) > 0:
+        # transformers.append(("num", StandardScaler(), self.numerical_cols))
         if len(self.categorical_cols) > 0:
             transformers.append(
                 (
@@ -318,7 +318,7 @@ class IGANN:
             X_transformed = self.column_transformer.fit_transform(X)
 
             # Create the scaler_dict for inverse transform
-            self._create_scaler_dict()  # Works only for StandardScaler and num features
+            # self._create_scaler_dict()  # Works only for StandardScaler and num features
         else:
             # Use the pre-fitted transformer
             X_transformed = self.column_transformer.transform(X)
