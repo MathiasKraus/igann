@@ -265,7 +265,9 @@ class IGANN:
 
     def _preprocess_feature_matrix(self, X, fit_transform=True):
         """
-        Preprocesses the feature matrix using ColumnTransformer for numerical scaling and one-hot encoding for categorical variables.
+        Preprocesses the feature matrix using a ColumnTransformer that:
+        - Scales numerical columns with StandardScaler
+        - One-hot encodes categorical columns
         Ensures numerical columns come first in the transformed matrix.
         """
         # Validate input
@@ -281,86 +283,92 @@ class IGANN:
 
         # Separate numerical and categorical columns we safe the column names for later reference
         self.categorical_cols = X.select_dtypes(
-            include=["category", "object"]
+            include=[
+                "category",
+                "object",
+                "string",
+            ]
         ).columns.tolist()
         self.numerical_cols = list(set(X.columns) - set(self.categorical_cols))
 
-        if len(self.categorical_cols) == 0:
-            print("not cat columns detected")
-            self.feature_names = self.numerical_cols
-            self.n_numerical_cols = len(self.numerical_cols)
-            self.n_categorical_cols = 0
-            X_tensor = torch.tensor(X.values, dtype=torch.float32)
+        # Build a list of (name, transformer, columns)
+        transformers = []
+        # if len(self.numerical_cols) > 0:
+        # transformers.append(("num", StandardScaler(), self.numerical_cols))
+        if len(self.categorical_cols) > 0:
+            transformers.append(
+                (
+                    "cat",
+                    OneHotEncoder(
+                        drop="first",
+                        handle_unknown="ignore",
+                        sparse_output=False,
+                    ),
+                    self.categorical_cols,
+                )
+            )
 
+        # Create or reuse the ColumnTransformer
+        if fit_transform:
+            self.column_transformer = ColumnTransformer(
+                transformers=transformers,
+                remainder="passthrough",  # keep any extra columns, if they exist
+                verbose_feature_names_out=False,
+            ).set_output(transform="pandas")
+            X_transformed = self.column_transformer.fit_transform(X)
+
+            # Create the scaler_dict for inverse transform
+            # self._create_scaler_dict()  # Works only for StandardScaler and num features
         else:
-            # Define a ColumnTransformer
-            if fit_transform:
-                self.column_transformer = ColumnTransformer(
-                    transformers=[
-                        # (
-                        #    "num",
-                        #    #StandardScaler(), #todo: add this and then reverse in plotting
-                        #    self.numerical_cols,
-                        # ),
-                        (
-                            "cat",
-                            OneHotEncoder(
-                                drop="first",
-                                handle_unknown="ignore",
-                                sparse_output=False,
-                            ),
-                            self.categorical_cols,
-                        ),
-                    ],
-                    remainder="passthrough",  # Keep other columns, if any
-                    verbose_feature_names_out=False,  # persevre column names after one hot encoding
-                ).set_output(transform="pandas")
-                # Fit and transform the data
-                X_transformed = self.column_transformer.fit_transform(X)
+            # Use the pre-fitted transformer
+            X_transformed = self.column_transformer.transform(X)
+
+        # -- Construct final feature names: numeric columns first, then OHE categorical --
+        # numeric
+        new_feature_names = []
+        if len(self.numerical_cols) > 0:
+            new_feature_names.extend(self.numerical_cols)
+
+        # categorical
+        if len(self.categorical_cols) > 0:
+            # get the OneHotEncoder from the column_transformer
+            one_hot_encoder = self.column_transformer.named_transformers_.get(
+                "cat", None
+            )
+            if one_hot_encoder and one_hot_encoder != "drop":
+                cat_feature_names = list(
+                    one_hot_encoder.get_feature_names_out(self.categorical_cols)
+                )
+                new_feature_names.extend(cat_feature_names)
+                # Store the dropped categories for reference:
+                self.dropped_features = {
+                    feat: categories[0]
+                    for feat, categories in zip(
+                        self.categorical_cols, one_hot_encoder.categories_
+                    )
+                }
             else:
-                # Transform using the pre-fitted ColumnTransformer
-                X_transformed = self.column_transformer.transform(X)
+                # If for some reason cat columns are dropped or None, just skip
+                pass
 
-            # Record feature names for reference
-            self.feature_names = self.numerical_cols + list(
-                self.column_transformer.named_transformers_[
-                    "cat"
-                ].get_feature_names_out(self.categorical_cols)
+        self.feature_names = new_feature_names
+        self.n_numerical_cols = len(self.numerical_cols)
+        self.n_categorical_cols = len(self.feature_names) - self.n_numerical_cols
+
+        # Safety check to ensure all expected columns are present
+        missing = [
+            col for col in self.feature_names if col not in X_transformed.columns
+        ]
+        if missing:
+            raise ValueError(
+                f"DataFrame is missing columns needed for ordering: {missing}"
             )
 
-            # Identify dropped features from OneHotEncoder
-            one_hot_encoder = self.column_transformer.named_transformers_["cat"]
-            self.dropped_features = {
-                feature: categories[0]
-                for feature, categories in zip(
-                    self.categorical_cols, one_hot_encoder.categories_
-                )
-            }
+        # Reorder columns so numeric are first, then OHE categorical
+        X_final = X_transformed[self.feature_names]
 
-            # Set the number of categorical and numerical columns based on OneHotEncoder output
-            self.n_numerical_cols = len(self.numerical_cols)
-            self.n_categorical_cols = len(
-                self.column_transformer.named_transformers_[
-                    "cat"
-                ].get_feature_names_out(self.categorical_cols)
-            )
-
-            # Reorder X to match feature_names list (we often need this for itterating through the features):
-            # safty check if all columns are present
-            missing = [
-                col for col in self.feature_names if col not in X_transformed.columns
-            ]
-            if missing:
-                raise ValueError(
-                    f"DataFrame is missing columns needed for ordering: {missing}"
-                )
-
-            X_transformed = X_transformed[self.feature_names]
-
-            # Convert to PyTorch tensor
-            X_tensor = torch.tensor(X_transformed.to_numpy(), dtype=torch.float32)
-
-        return X_tensor
+        # Convert the final DataFrame to PyTorch tensor
+        return torch.tensor(X_final.to_numpy(), dtype=torch.float32)
 
     def fit(self, X, y, val_set=None):
         """
