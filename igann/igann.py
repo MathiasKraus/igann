@@ -423,8 +423,16 @@ class IGANN:
         if self.task == "regression" and self.scale_target:
             # Scale
             if fit_transform:
+                # set up the normal scaler
                 self.y_scaler = StandardScaler()
                 y_scaled = self.y_scaler.fit_transform(y.reshape(-1, 1)).flatten()
+                # set up the per feature scaler
+                self.y_scaler_per_feature = StandardScaler()
+                self.y_scaler_per_feature.mean_ = 0  # we don't subtract the mean
+                self.y_scaler_per_feature.scale_ = (
+                    self.y_scaler.scale_
+                )  # we use the same scale
+
             else:
                 y_scaled = self.y_scaler.transform(y.reshape(-1, 1)).flatten()
 
@@ -451,6 +459,21 @@ class IGANN:
             y = self.y_scaler.inverse_transform(y.reshape(-1, 1)).flatten()
             return y
         else:
+            return y
+
+    def rescale_y_per_feature(self, y):
+        """
+        This function rescales the target variable y back to the original scale without subtracting the mean.
+        """
+
+        # Convert y to a numpy array if it is a scalar, list, or any other type
+        if isinstance(y, (float, int)):
+            y = np.array([y])
+        else:
+            y = np.array(y)
+        if self.task == "regression" and self.scale_target:
+            # rescale y
+            y = self.y_scaler_per_feature.inverse_transform(y.reshape(-1, 1)).flatten()
             return y
 
     def fit(self, X, y, val_set=None):
@@ -864,7 +887,7 @@ class IGANN:
                         "datatype": datatype,
                         # we save this unscaled due to better interpretability
                         "x": self.scaler_dict_[feat_name](feat_values.cpu().numpy()),
-                        "y": self.rescale_y(pred.numpy()),
+                        "y": self.rescale_y_per_feature(pred.numpy()),
                         "avg_effect": float(torch.mean(torch.abs(pred))),
                         "hist": {
                             # make this list for eaysier handling and plotting
@@ -883,7 +906,7 @@ class IGANN:
                         "name": feat_name.rsplit("_", 1)[0],
                         "datatype": datatype,
                         "x": [class_name],
-                        "y": self.rescale_y(pred.numpy()[1]),
+                        "y": self.rescale_y_per_feature(pred.numpy()[1]),
                         "avg_effect": float(torch.mean(torch.abs(pred))),
                         "hist": {
                             "counts": [self.hist[i][0][-1].cpu().tolist()],

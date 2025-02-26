@@ -427,12 +427,16 @@ class GAMmodel:
             y[col] = self.predict_single(col, X[col])
 
         y = pd.DataFrame(y)
-        print(y)
-        # = np.array(y.sum(axis=1))
-        y_scaled = self.base_model.scale_y(np.array(y.sum(axis=1)), fit_transform=False)
+        # print(y)
 
-        print(y_scaled)
-        print(self.base_model.linear_model.intercept_)
+        y = np.array(y.sum(axis=1))
+        if self.base_model.task == "regression" and self.base_model.scale_target:
+            y = y + self.base_model.y_scaler.mean_
+
+        y_scaled = self.base_model.scale_y(y, fit_transform=False)
+
+        # print(y_scaled)
+        # print(self.base_model.linear_model.intercept_)
         y_predict_raw = y_scaled + self.base_model.linear_model.intercept_
 
         return y_predict_raw
