@@ -875,7 +875,7 @@ class IGANN:
         height_ratios = [4, 1] * n_rows  # shape is 4 histogram is 1
 
         # set up figure
-        plt.close(fig="shape functions")
+        plt.close(fig="Shape functions")
         fig, axs = plt.subplots(
             total_rows,
             total_cols,
